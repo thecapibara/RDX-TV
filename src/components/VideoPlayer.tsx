@@ -2754,7 +2754,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                           className={cn(
                             "px-4 py-1.5 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                             isCurrent
-                              ? "bg-white text-zinc-950 shadow-md font-extrabold"
+                              ? "bg-rose-600 text-white shadow-md font-extrabold"
                               : "bg-zinc-800 text-zinc-400 hover:text-white border border-white/10"
                           )}
                         >
@@ -4165,7 +4165,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         className={cn(
                           "px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all whitespace-nowrap cursor-pointer",
                           drawerSeason === sNum
-                            ? "bg-white text-zinc-950"
+                            ? "bg-rose-600 text-white"
                             : "bg-zinc-800 text-zinc-400 hover:text-white"
                         )}
                       >

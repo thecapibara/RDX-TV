@@ -482,7 +482,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   playButtonClickSound();
                   handleStartPlayback();
                 }}
-                className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-white text-black hover:bg-zinc-200 font-extrabold text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer shrink-0"
+                className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-base shadow-[0_8px_28px_rgba(225,29,72,0.4)] transition-all focus:outline-none focus:ring-4 focus:ring-rose-400 focus:scale-105 cursor-pointer shrink-0"
               >
                 <Play className="w-5 h-5 fill-current" />
                 <span>

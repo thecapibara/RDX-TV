@@ -117,7 +117,7 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
             className={cn(
               "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
               activeGenre === null
-                ? "bg-white text-zinc-950 font-bold shadow-sm"
+                ? "bg-rose-600 text-white font-bold shadow-sm shadow-rose-600/30"
                 : "bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10"
             )}
           >

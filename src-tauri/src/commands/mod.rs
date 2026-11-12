@@ -1,5 +1,7 @@
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::client::HttpClient;
@@ -202,23 +204,32 @@ pub async fn set_active_mirror(state: State<'_, AppState>, mirror_url: String) -
 
 #[tauri::command]
 pub async fn open_captcha_window(app_handle: AppHandle, state: State<'_, AppState>, mirror_url: Option<String>) -> Result<(), String> {
-    let target_url = if let Some(url) = mirror_url {
-        url
-    } else {
-        state.storage.get_settings().map_err(|e| e.to_string())?.active_mirror
-    };
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = (app_handle, state, mirror_url);
+        return Err("Captcha bridge window is not supported on TV/mobile".to_string());
+    }
 
-    let parsed_url: url::Url = target_url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let window_url = WebviewUrl::External(parsed_url);
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let target_url = if let Some(url) = mirror_url {
+            url
+        } else {
+            state.storage.get_settings().map_err(|e| e.to_string())?.active_mirror
+        };
 
-    WebviewWindowBuilder::new(&app_handle, "captcha_bridge", window_url)
-        .title("RDX — Перевірка захисту")
-        .inner_size(860.0, 680.0)
-        .resizable(true)
-        .build()
-        .map_err(|e| format!("Failed to open captcha window: {}", e))?;
+        let parsed_url: url::Url = target_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+        let window_url = WebviewUrl::External(parsed_url);
 
-    Ok(())
+        WebviewWindowBuilder::new(&app_handle, "captcha_bridge", window_url)
+            .title("RDX — Перевірка захисту")
+            .inner_size(860.0, 680.0)
+            .resizable(true)
+            .build()
+            .map_err(|e| format!("Failed to open captcha window: {}", e))?;
+
+        Ok(())
+    }
 }
 
 // ==================== Parser & Streaming Commands ====================
@@ -532,41 +543,53 @@ pub async fn select_fastest_cdn(state: State<'_, AppState>, stream_url: String) 
 
 #[tauri::command]
 pub async fn set_fullscreen_mode(app_handle: AppHandle, enabled: bool) -> Result<bool, String> {
-    let window = app_handle
-        .get_webview_window("main")
-        .ok_or_else(|| "Main window not found".to_string())?;
-
-    let _ = window.set_fullscreen(enabled);
-
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        if std::env::var_os("NIRI_SOCKET").is_some() {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            if let (Ok(win_size), Ok(Some(monitor))) = (window.inner_size(), window.current_monitor()) {
-                let mon_size = monitor.size();
-                let is_currently_full = win_size.width >= mon_size.width.saturating_sub(2)
-                    && win_size.height >= mon_size.height.saturating_sub(2);
-                if enabled && !is_currently_full {
-                    let _ = std::process::Command::new("niri")
-                        .args(["msg", "action", "fullscreen-window"])
-                        .status();
-                } else if !enabled && is_currently_full {
-                    let _ = std::process::Command::new("niri")
-                        .args(["msg", "action", "fullscreen-window"])
-                        .status();
+        let _ = (app_handle, enabled);
+        return Ok(true);
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let window = app_handle
+            .get_webview_window("main")
+            .ok_or_else(|| "Main window not found".to_string())?;
+
+        let _ = window.set_fullscreen(enabled);
+
+        #[cfg(target_os = "linux")]
+        {
+            if std::env::var_os("NIRI_SOCKET").is_some() {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                if let (Ok(win_size), Ok(Some(monitor))) = (window.inner_size(), window.current_monitor()) {
+                    let mon_size = monitor.size();
+                    let is_currently_full = win_size.width >= mon_size.width.saturating_sub(2)
+                        && win_size.height >= mon_size.height.saturating_sub(2);
+                    if enabled && !is_currently_full {
+                        let _ = std::process::Command::new("niri")
+                            .args(["msg", "action", "fullscreen-window"])
+                            .status();
+                    } else if !enabled && is_currently_full {
+                        let _ = std::process::Command::new("niri")
+                            .args(["msg", "action", "fullscreen-window"])
+                            .status();
+                    }
                 }
             }
         }
-    }
 
-    Ok(enabled)
+        Ok(enabled)
+    }
 }
 
 #[tauri::command]
 pub async fn start_drag_window(app_handle: AppHandle) -> Result<(), String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.start_dragging();
     }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let _ = app_handle;
     Ok(())
 }
 

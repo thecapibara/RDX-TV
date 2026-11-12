@@ -17,6 +17,33 @@ const isTauri =
   typeof window !== "undefined" &&
   Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 
+export function getTizenBridgeUrl(): string | null {
+  try {
+    const saved = localStorage.getItem("rdx_bridge_url")?.trim();
+    if (saved) return saved.replace(/\/+$/, "");
+  } catch {}
+  const envUrl = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+    ?.VITE_RDX_BRIDGE_URL?.trim();
+  return envUrl ? envUrl.replace(/\/+$/, "") : null;
+}
+
+export async function invokeBridge<T>(
+  command: string,
+  args?: Record<string, unknown>
+): Promise<T | null> {
+  const bridgeUrl = getTizenBridgeUrl();
+  if (!bridgeUrl) return null;
+  const res = await fetch(`${bridgeUrl}/api/invoke`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command, args: args ?? {} }),
+  });
+  if (!res.ok) {
+    throw new Error(`Bridge error (${res.status}) on ${command}`);
+  }
+  return (await res.json()) as T;
+}
+
 // ==================== BROWSER DEMO / MOCK DATA ====================
 
 const MOCK_STREAM_DATA: StreamData = {
@@ -412,6 +439,8 @@ export const api = {
   // Catalog & Search
   getHomeCatalog: async (filter?: string, genre?: string, page?: number): Promise<MediaCard[]> => {
     if (isTauri) return invoke<MediaCard[]>("get_home_catalog", { filter, genre, page });
+    const bridged = await invokeBridge<MediaCard[]>("get_home_catalog", { filter, genre, page });
+    if (bridged) return bridged;
     return MOCK_CATALOG;
   },
 
@@ -421,13 +450,15 @@ export const api = {
     filter?: string,
     page?: number
   ): Promise<MediaCard[]> => {
-    if (isTauri)
-      return invoke<MediaCard[]>("get_category_catalog", {
-        category,
-        genre: genre || undefined,
-        filter: filter || undefined,
-        page,
-      });
+    const args = {
+      category,
+      genre: genre || undefined,
+      filter: filter || undefined,
+      page,
+    };
+    if (isTauri) return invoke<MediaCard[]>("get_category_catalog", args);
+    const bridged = await invokeBridge<MediaCard[]>("get_category_catalog", args);
+    if (bridged) return bridged;
     if (category === "films") {
       return MOCK_CATALOG.filter((i) => i.entity_type === "movie");
     }
@@ -445,6 +476,8 @@ export const api = {
 
   searchMedia: async (query: string): Promise<MediaCard[]> => {
     if (isTauri) return invoke<MediaCard[]>("search_media", { query });
+    const bridged = await invokeBridge<MediaCard[]>("search_media", { query });
+    if (bridged) return bridged;
     const q = query.toLowerCase();
     return MOCK_CATALOG.filter(
       (m) =>
@@ -455,6 +488,8 @@ export const api = {
 
   searchAutocomplete: async (query: string): Promise<SearchItem[]> => {
     if (isTauri) return invoke<SearchItem[]>("search_autocomplete", { query });
+    const bridged = await invokeBridge<SearchItem[]>("search_autocomplete", { query });
+    if (bridged) return bridged;
     const q = query.toLowerCase();
     return MOCK_CATALOG.filter((m) => m.title.toLowerCase().includes(q)).map((m) => ({
       title: m.title,
@@ -469,6 +504,8 @@ export const api = {
   // Media Details & Streaming
   getMediaDetails: async (itemUrl: string): Promise<MediaDetails> => {
     if (isTauri) return invoke<MediaDetails>("get_media_details", { itemUrl });
+    const bridged = await invokeBridge<MediaDetails>("get_media_details", { itemUrl });
+    if (bridged) return bridged;
     const found = MOCK_CATALOG.find((m) => m.url === itemUrl) || MOCK_CATALOG[0];
     const isSeries = found.entity_type === "series";
 
@@ -548,16 +585,17 @@ export const api = {
     season?: number,
     episode?: number
   ): Promise<StreamData> => {
-    if (isTauri) {
-      return invoke<StreamData>("get_stream", {
-        mediaId,
-        translatorId,
-        season,
-        episode,
-        isSeries,
-        refererUrl,
-      });
-    }
+    const args = {
+      mediaId,
+      translatorId,
+      season,
+      episode,
+      isSeries,
+      refererUrl,
+    };
+    if (isTauri) return invoke<StreamData>("get_stream", args);
+    const bridged = await invokeBridge<StreamData>("get_stream", args);
+    if (bridged) return bridged;
     return MOCK_STREAM_DATA;
   },
 
@@ -566,13 +604,10 @@ export const api = {
     translatorId: string,
     refererUrl: string
   ): Promise<EpisodesData> => {
-    if (isTauri) {
-      return invoke<EpisodesData>("get_episodes", {
-        mediaId,
-        translatorId,
-        refererUrl,
-      });
-    }
+    const args = { mediaId, translatorId, refererUrl };
+    if (isTauri) return invoke<EpisodesData>("get_episodes", args);
+    const bridged = await invokeBridge<EpisodesData>("get_episodes", args);
+    if (bridged) return bridged;
     return {
       seasons: [
         { id: "1", title: "1 сезон" },
@@ -641,7 +676,11 @@ export const api = {
         return null;
       }
     }
-    return null;
+    try {
+      return await invokeBridge<string | null>("get_backdrop", { title, origTitle, year });
+    } catch {
+      return null;
+    }
   },
 
   getSystemTime: async (): Promise<string> => {

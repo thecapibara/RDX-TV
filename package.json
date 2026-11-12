@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:tizen": "npm run build && rm -rf dist-tizen && cp -r dist dist-tizen && cp tizen/config.xml dist-tizen/config.xml",
     "preview": "vite preview",
     "tauri": "tauri"
   },

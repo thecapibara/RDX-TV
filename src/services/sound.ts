@@ -1,7 +1,7 @@
 /**
  * RDX-TV - UI Audio Engine (Pure Web Audio API)
  * Lightweight synthesized UI feedback sounds for Android TV, Samsung Tizen, and WebKit.
- * Zero native dependency, zero latency, and rate-limiting against rapid cursor sweeps.
+ * Zero native dependency, zero latency, and rate-limiting against rapid traversal.
  */
 
 // Initialize state from localStorage (default: true on TV, ON by default unless explicitly disabled)
@@ -16,23 +16,27 @@ let uiSoundsEnabled: boolean = (() => {
 let lastHoverSoundTime = 0;
 let sharedAudioCtx: AudioContext | null = null;
 
-function getAudioContext(): AudioContext | null {
+function withAudioContext(fn: (ctx: AudioContext) => void) {
   try {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return null;
+    if (!AudioCtx) return;
 
     if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
       sharedAudioCtx = new AudioCtx();
     }
-    if (sharedAudioCtx.state === "suspended") {
-      sharedAudioCtx.resume().catch(() => {});
+
+    const ctx = sharedAudioCtx;
+    if (ctx.state === "suspended") {
+      ctx
+        .resume()
+        .then(() => fn(ctx))
+        .catch(() => {});
+    } else {
+      fn(ctx);
     }
-    return sharedAudioCtx;
-  } catch {
-    return null;
-  }
+  } catch {}
 }
 
 export const setUiSoundsEnabled = (enabled: boolean) => {
@@ -55,8 +59,7 @@ export const suppressHoverSound = (cooldownMs: number = 400) => {
 };
 
 /**
- * Subtle velvet tap for hover/focus (Apple TV / PS5 focus style)
- * Rate-limited to prevent rapid traversal flutter.
+ * Crisp tactile D-pad / focus tick (Apple TV / PS5 style, audible on laptop & TV speakers)
  */
 export const playHoverSound = () => {
   if (!uiSoundsEnabled) return;
@@ -64,42 +67,37 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
-  try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-
+  withAudioContext((ctx) => {
     const t = ctx.currentTime;
+    const dur = 0.038;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
     osc.type = "sine";
-    osc.frequency.setValueAtTime(140, t);
-    osc.frequency.exponentialRampToValueAtTime(75, t + 0.045);
+    osc.frequency.setValueAtTime(520, t);
+    osc.frequency.exponentialRampToValueAtTime(260, t + dur);
 
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.08, t + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+    gain.gain.linearRampToValueAtTime(0.18, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start(t);
-    osc.stop(t + 0.05);
-  } catch {}
+    osc.stop(t + dur + 0.01);
+  });
 };
 
 /**
- * Warm low-pass swell for modal open
+ * Warm cinematic swell when opening a movie/series card
  */
 export const playModalOpenSound = () => {
   if (!uiSoundsEnabled) return;
 
-  try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-
+  withAudioContext((ctx) => {
     const t = ctx.currentTime;
-    const dur = 0.22;
+    const dur = 0.19;
 
     const oscRoot = ctx.createOscillator();
     const oscFifth = ctx.createOscillator();
@@ -107,18 +105,18 @@ export const playModalOpenSound = () => {
     const gain = ctx.createGain();
 
     oscRoot.type = "sine";
-    oscRoot.frequency.setValueAtTime(150, t);
-    oscRoot.frequency.exponentialRampToValueAtTime(220, t + dur);
+    oscRoot.frequency.setValueAtTime(280, t);
+    oscRoot.frequency.exponentialRampToValueAtTime(420, t + dur);
 
     oscFifth.type = "sine";
-    oscFifth.frequency.setValueAtTime(225, t);
-    oscFifth.frequency.exponentialRampToValueAtTime(330, t + dur);
+    oscFifth.frequency.setValueAtTime(420, t);
+    oscFifth.frequency.exponentialRampToValueAtTime(630, t + dur);
 
     filter.type = "lowpass";
-    filter.frequency.setValueAtTime(480, t);
+    filter.frequency.setValueAtTime(1100, t);
 
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.07, t + 0.04);
+    gain.gain.linearRampToValueAtTime(0.16, t + 0.025);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
     oscRoot.connect(filter);
@@ -130,31 +128,28 @@ export const playModalOpenSound = () => {
     oscFifth.start(t);
     oscRoot.stop(t + dur + 0.02);
     oscFifth.stop(t + dur + 0.02);
-  } catch {}
+  });
 };
 
 /**
- * Crisp soft click for button click (navigation tabs, filters, buttons)
+ * Crisp soft click for OK / button press
  */
 export const playButtonClickSound = () => {
   if (!uiSoundsEnabled) return;
 
-  try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-
+  withAudioContext((ctx) => {
     const t = ctx.currentTime;
-    const dur = 0.026;
+    const dur = 0.032;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
     osc.type = "sine";
-    osc.frequency.setValueAtTime(620, t);
-    osc.frequency.exponentialRampToValueAtTime(220, t + dur);
+    osc.frequency.setValueAtTime(760, t);
+    osc.frequency.exponentialRampToValueAtTime(340, t + dur);
 
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.09, t + 0.002);
+    gain.gain.linearRampToValueAtTime(0.2, t + 0.003);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
     osc.connect(gain);
@@ -162,7 +157,7 @@ export const playButtonClickSound = () => {
 
     osc.start(t);
     osc.stop(t + dur + 0.01);
-  } catch {}
+  });
 };
 
 /**
@@ -171,10 +166,7 @@ export const playButtonClickSound = () => {
 export const playBackSound = () => {
   if (!uiSoundsEnabled) return;
 
-  try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-
+  withAudioContext((ctx) => {
     const t = ctx.currentTime;
     const dur = 0.055;
 
@@ -182,11 +174,11 @@ export const playBackSound = () => {
     const gain = ctx.createGain();
 
     osc.type = "sine";
-    osc.frequency.setValueAtTime(340, t);
-    osc.frequency.exponentialRampToValueAtTime(140, t + dur);
+    osc.frequency.setValueAtTime(440, t);
+    osc.frequency.exponentialRampToValueAtTime(190, t + dur);
 
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.08, t + 0.004);
+    gain.gain.linearRampToValueAtTime(0.16, t + 0.004);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
     osc.connect(gain);
@@ -194,7 +186,7 @@ export const playBackSound = () => {
 
     osc.start(t);
     osc.stop(t + dur + 0.01);
-  } catch {}
+  });
 };
 
 /**
@@ -207,7 +199,9 @@ export const playAntennaBubblesSound = () => {
   } catch {}
 
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
 
     const ctx = new AudioCtx();
@@ -215,7 +209,13 @@ export const playAntennaBubblesSound = () => {
       ctx.resume().catch(() => {});
     }
 
-    const triggerBubble = (startOffsetSec: number, startFreq: number, endFreq: number, durationSec: number, peakGain: number) => {
+    const triggerBubble = (
+      startOffsetSec: number,
+      startFreq: number,
+      endFreq: number,
+      durationSec: number,
+      peakGain: number
+    ) => {
       const now = ctx.currentTime + startOffsetSec;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -235,7 +235,6 @@ export const playAntennaBubblesSound = () => {
       osc.stop(now + durationSec + 0.02);
     };
 
-    // Two crisp water-bubble pops + subtle high sparkle
     triggerBubble(0.0, 310, 690, 0.085, 0.22);
     triggerBubble(0.07, 460, 980, 0.09, 0.18);
     triggerBubble(0.145, 640, 1220, 0.07, 0.11);
@@ -243,7 +242,5 @@ export const playAntennaBubblesSound = () => {
     setTimeout(() => {
       ctx.close().catch(() => {});
     }, 600);
-  } catch {
-    // Ignore autoplay or Web Audio restrictions
-  }
+  } catch {}
 };

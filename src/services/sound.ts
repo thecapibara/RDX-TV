@@ -1,13 +1,15 @@
 /**
- * RDX-TV - UI Audio Engine (Web Audio API + Original Baked MP3s)
- * Preloads & decodes the original RDX MP3 assets (/hovercard.mp3, /opencard.mp3, /buttonclick.mp3)
- * into AudioBuffers for 0ms latency playback across Android TV, Samsung Tizen, and Desktop.
+ * RDX-TV - UI Audio Engine (Web Audio API + Original Baked MP3s + Synth Fallback)
+ * Preloads /hovercard.mp3, /opencard.mp3, /buttonclick.mp3 into AudioBuffers,
+ * with automatic HTMLAudioElement + Web Audio oscillator fallback for WebKitGTK.
  */
 
-// Initialize state from localStorage (default: true on TV, ON by default unless explicitly disabled)
+const UI_SOUNDS_KEY = "rdx_tv_ui_sounds";
+
+// ON by default for TV unless explicitly disabled by the user
 let uiSoundsEnabled: boolean = (() => {
   try {
-    return localStorage.getItem("rdx_ui_sounds") !== "false";
+    return localStorage.getItem(UI_SOUNDS_KEY) !== "false";
   } catch {
     return true;
   }
@@ -16,6 +18,7 @@ let uiSoundsEnabled: boolean = (() => {
 let lastHoverSoundTime = 0;
 let sharedAudioCtx: AudioContext | null = null;
 const bufferCache = new Map<string, AudioBuffer>();
+const failedBuffers = new Set<string>();
 const loadingBuffers = new Map<string, Promise<AudioBuffer | null>>();
 
 function getAudioContext(): AudioContext | null {
@@ -38,6 +41,7 @@ function getAudioContext(): AudioContext | null {
 }
 
 async function loadSoundBuffer(url: string): Promise<AudioBuffer | null> {
+  if (failedBuffers.has(url)) return null;
   const cached = bufferCache.get(url);
   if (cached) return cached;
 
@@ -50,12 +54,16 @@ async function loadSoundBuffer(url: string): Promise<AudioBuffer | null> {
   const promise = (async () => {
     try {
       const res = await fetch(url);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        failedBuffers.add(url);
+        return null;
+      }
       const arr = await res.arrayBuffer();
       const decoded = await ctx.decodeAudioData(arr);
       bufferCache.set(url, decoded);
       return decoded;
     } catch {
+      failedBuffers.add(url);
       return null;
     } finally {
       loadingBuffers.delete(url);
@@ -66,50 +74,107 @@ async function loadSoundBuffer(url: string): Promise<AudioBuffer | null> {
   return promise;
 }
 
-function playBakedMp3(url: string, volume: number = 0.85, playbackRate: number = 1.0) {
+function playSynthTone(
+  ctx: AudioContext,
+  f1: number,
+  f2: number,
+  dur: number,
+  peakGain: number
+) {
+  try {
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(f1, t);
+    osc.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(peakGain, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.015);
+  } catch {}
+}
+
+function playSound(
+  url: string,
+  volume: number,
+  playbackRate: number,
+  fallbackSynth: (ctx: AudioContext) => void
+) {
   if (!uiSoundsEnabled) return;
 
   const ctx = getAudioContext();
-  if (!ctx) {
-    // Fallback to HTMLAudioElement if Web Audio API is unavailable
+
+  const playHtmlOrSynth = () => {
     try {
       const audio = new Audio(url);
       audio.volume = Math.min(1, volume);
       audio.playbackRate = playbackRate;
-      audio.play().catch(() => {});
-    } catch {}
+      audio.play().catch(() => {
+        if (ctx) fallbackSynth(ctx);
+      });
+    } catch {
+      if (ctx) fallbackSynth(ctx);
+    }
+  };
+
+  if (!ctx) {
+    playHtmlOrSynth();
     return;
   }
 
-  const startBuffer = (buffer: AudioBuffer) => {
-    const doPlay = () => {
-      try {
-        const src = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        src.buffer = buffer;
-        src.playbackRate.value = playbackRate;
-        gain.gain.value = volume;
-        src.connect(gain);
-        gain.connect(ctx.destination);
-        src.start(0);
-      } catch {}
-    };
-
+  const runWithCtx = (fn: () => void) => {
     if (ctx.state === "suspended") {
-      ctx.resume().then(doPlay).catch(() => {});
+      ctx.resume().then(fn).catch(() => {});
     } else {
-      doPlay();
+      fn();
     }
   };
 
   const cached = bufferCache.get(url);
   if (cached) {
-    startBuffer(cached);
+    runWithCtx(() => {
+      try {
+        const src = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        src.buffer = cached;
+        src.playbackRate.value = playbackRate;
+        gain.gain.value = volume;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(0);
+      } catch {
+        fallbackSynth(ctx);
+      }
+    });
+    return;
+  }
+
+  if (failedBuffers.has(url)) {
+    runWithCtx(() => playHtmlOrSynth());
     return;
   }
 
   loadSoundBuffer(url).then((buf) => {
-    if (buf) startBuffer(buf);
+    runWithCtx(() => {
+      if (buf) {
+        try {
+          const src = ctx.createBufferSource();
+          const gain = ctx.createGain();
+          src.buffer = buf;
+          src.playbackRate.value = playbackRate;
+          gain.gain.value = volume;
+          src.connect(gain);
+          gain.connect(ctx.destination);
+          src.start(0);
+          return;
+        } catch {}
+      }
+      playHtmlOrSynth();
+    });
   });
 }
 
@@ -123,7 +188,7 @@ if (typeof window !== "undefined") {
 export const setUiSoundsEnabled = (enabled: boolean) => {
   uiSoundsEnabled = enabled;
   try {
-    localStorage.setItem("rdx_ui_sounds", enabled ? "true" : "false");
+    localStorage.setItem(UI_SOUNDS_KEY, enabled ? "true" : "false");
   } catch {}
 };
 
@@ -139,7 +204,7 @@ export const suppressHoverSound = (cooldownMs: number = 400) => {
 };
 
 /**
- * Original baked hover/focus sound (/hovercard.mp3)
+ * Original baked hover/focus sound (/hovercard.mp3) with synth fallback
  */
 export const playHoverSound = () => {
   if (!uiSoundsEnabled) return;
@@ -147,28 +212,31 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
-  playBakedMp3("/hovercard.mp3", 0.7);
+  playSound("/hovercard.mp3", 0.75, 1.0, (ctx) => playSynthTone(ctx, 520, 260, 0.04, 0.18));
 };
 
 /**
- * Original baked card/modal open sound (/opencard.mp3)
+ * Original baked card/modal open sound (/opencard.mp3) with synth fallback
  */
 export const playModalOpenSound = () => {
-  playBakedMp3("/opencard.mp3", 0.85);
+  playSound("/opencard.mp3", 0.85, 1.0, (ctx) => {
+    playSynthTone(ctx, 280, 420, 0.18, 0.15);
+    playSynthTone(ctx, 420, 630, 0.18, 0.1);
+  });
 };
 
 /**
- * Original baked button/OK click sound (/buttonclick.mp3)
+ * Original baked button/OK click sound (/buttonclick.mp3) with synth fallback
  */
 export const playButtonClickSound = () => {
-  playBakedMp3("/buttonclick.mp3", 0.85);
+  playSound("/buttonclick.mp3", 0.85, 1.0, (ctx) => playSynthTone(ctx, 760, 340, 0.035, 0.2));
 };
 
 /**
- * Back remote sound (slightly lower-pitched baked click)
+ * Back remote sound
  */
 export const playBackSound = () => {
-  playBakedMp3("/buttonclick.mp3", 0.65, 0.78);
+  playSound("/buttonclick.mp3", 0.65, 0.78, (ctx) => playSynthTone(ctx, 440, 190, 0.055, 0.16));
 };
 
 /**

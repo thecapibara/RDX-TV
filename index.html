@@ -118,12 +118,12 @@
       }
       .rdx-tv-antennas {
         position: absolute;
-        top: -54px;
-        right: -50px;
+        top: -42px;
+        right: -42px;
         width: 116px;
         height: 104px;
         overflow: visible;
-        z-index: 4;
+        z-index: 1;
         pointer-events: none;
         transform-origin: 24px 82px;
         opacity: 0;
@@ -133,6 +133,7 @@
       .rdx-pulse-ring {
         position: absolute;
         inset: 14px;
+        z-index: 0;
         border-radius: 40px;
         border: 1.5px solid var(--accent-500, #f43f5e);
         box-shadow: 0 0 50px var(--accent-600, rgba(225, 29, 72, 0.45));
@@ -142,6 +143,7 @@
       .rdx-pulse-ring-2 {
         position: absolute;
         inset: 14px;
+        z-index: 0;
         border-radius: 40px;
         border: 1px solid var(--accent-400, #fb7185);
         opacity: 0;
@@ -149,6 +151,7 @@
       }
       .rdx-boot-logo-wrap {
         position: relative;
+        z-index: 2;
         width: 164px;
         height: 164px;
         border-radius: 38px;

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { tizenRezka } from "./tizenRezka";
 import type {
   AppSettings,
   Bookmark,
@@ -16,33 +17,6 @@ import type {
 const isTauri =
   typeof window !== "undefined" &&
   Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
-
-export function getTizenBridgeUrl(): string | null {
-  try {
-    const saved = localStorage.getItem("rdx_bridge_url")?.trim();
-    if (saved) return saved.replace(/\/+$/, "");
-  } catch {}
-  const envUrl = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    ?.VITE_RDX_BRIDGE_URL?.trim();
-  return envUrl ? envUrl.replace(/\/+$/, "") : null;
-}
-
-export async function invokeBridge<T>(
-  command: string,
-  args?: Record<string, unknown>
-): Promise<T | null> {
-  const bridgeUrl = getTizenBridgeUrl();
-  if (!bridgeUrl) return null;
-  const res = await fetch(`${bridgeUrl}/api/invoke`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command, args: args ?? {} }),
-  });
-  if (!res.ok) {
-    throw new Error(`Bridge error (${res.status}) on ${command}`);
-  }
-  return (await res.json()) as T;
-}
 
 // ==================== BROWSER DEMO / MOCK DATA ====================
 
@@ -378,44 +352,27 @@ export const api = {
   // Mirror Management
   checkMirrorStatus: async (mirrorUrl: string): Promise<MirrorStatus> => {
     if (isTauri) return invoke<MirrorStatus>("check_mirror_status", { mirrorUrl });
-    return {
-      mirror_url: mirrorUrl,
-      online: true,
-      latency_ms: 38,
-      status_message: "OK • Пряме",
-      doh_bypass: false,
-      catalog_available: true,
-    };
+    return tizenRezka.checkMirrorStatus(mirrorUrl);
   },
 
   checkAllMirrors: async (mirrorUrls: string[]): Promise<MirrorStatus[]> => {
     if (isTauri) return invoke<MirrorStatus[]>("check_all_mirrors", { mirrorUrls });
-    return mirrorUrls.map((url, idx) => ({
-      mirror_url: url,
-      online: true,
-      latency_ms: 38 + idx * 14,
-      status_message: idx === 0 ? "OK • Пряме" : "OK • DoH обхід",
-      doh_bypass: idx > 0,
-      catalog_available: true,
-    }));
+    return Promise.all(mirrorUrls.map((url) => tizenRezka.checkMirrorStatus(url)));
   },
 
   smartSelectMirror: async (forceRotate = false): Promise<SmartRotationResult> => {
     if (isTauri) return invoke<SmartRotationResult>("smart_select_mirror", { forceRotate });
-    return {
-      selected_mirror: "https://rezka-tv.org",
-      switched: false,
-      statuses: [
-        {
-          mirror_url: "https://rezka-tv.org",
-          online: true,
-          latency_ms: 38,
-          status_message: "OK • Пряме",
-          doh_bypass: false,
-          catalog_available: true,
-        },
-      ],
-    };
+    const s = await api.getSettings();
+    const candidates = Array.from(new Set([s.active_mirror, ...s.custom_mirrors].filter(Boolean)));
+    const statuses = await Promise.all(candidates.map((u) => tizenRezka.checkMirrorStatus(u)));
+    const best =
+      statuses.find((st) => st.online && st.catalog_available) ||
+      statuses.find((st) => st.online) ||
+      statuses[0];
+    const selected_mirror = best?.mirror_url || s.active_mirror;
+    const switched = selected_mirror !== s.active_mirror;
+    if (switched) await api.setActiveMirror(selected_mirror);
+    return { selected_mirror, switched, statuses };
   },
 
   getActiveMirror: async (): Promise<string> => {
@@ -439,8 +396,13 @@ export const api = {
   // Catalog & Search
   getHomeCatalog: async (filter?: string, genre?: string, page?: number): Promise<MediaCard[]> => {
     if (isTauri) return invoke<MediaCard[]>("get_home_catalog", { filter, genre, page });
-    const bridged = await invokeBridge<MediaCard[]>("get_home_catalog", { filter, genre, page });
-    if (bridged) return bridged;
+    try {
+      const mirror = await api.getActiveMirror();
+      const items = await tizenRezka.getHomeCatalog(mirror, filter, genre, page);
+      if (items.length > 0) return items;
+    } catch (e) {
+      console.warn("[Tizen] getHomeCatalog direct fetch failed, using fallback:", e);
+    }
     return MOCK_CATALOG;
   },
 
@@ -457,8 +419,13 @@ export const api = {
       page,
     };
     if (isTauri) return invoke<MediaCard[]>("get_category_catalog", args);
-    const bridged = await invokeBridge<MediaCard[]>("get_category_catalog", args);
-    if (bridged) return bridged;
+    try {
+      const mirror = await api.getActiveMirror();
+      const items = await tizenRezka.getCategoryCatalog(mirror, category, genre, filter, page);
+      if (items.length > 0) return items;
+    } catch (e) {
+      console.warn("[Tizen] getCategoryCatalog direct fetch failed:", e);
+    }
     if (category === "films") {
       return MOCK_CATALOG.filter((i) => i.entity_type === "movie");
     }
@@ -476,8 +443,12 @@ export const api = {
 
   searchMedia: async (query: string): Promise<MediaCard[]> => {
     if (isTauri) return invoke<MediaCard[]>("search_media", { query });
-    const bridged = await invokeBridge<MediaCard[]>("search_media", { query });
-    if (bridged) return bridged;
+    try {
+      const mirror = await api.getActiveMirror();
+      return await tizenRezka.searchMedia(mirror, query);
+    } catch (e) {
+      console.warn("[Tizen] searchMedia direct fetch failed:", e);
+    }
     const q = query.toLowerCase();
     return MOCK_CATALOG.filter(
       (m) =>
@@ -488,8 +459,10 @@ export const api = {
 
   searchAutocomplete: async (query: string): Promise<SearchItem[]> => {
     if (isTauri) return invoke<SearchItem[]>("search_autocomplete", { query });
-    const bridged = await invokeBridge<SearchItem[]>("search_autocomplete", { query });
-    if (bridged) return bridged;
+    try {
+      const mirror = await api.getActiveMirror();
+      return await tizenRezka.searchAutocomplete(mirror, query);
+    } catch {}
     const q = query.toLowerCase();
     return MOCK_CATALOG.filter((m) => m.title.toLowerCase().includes(q)).map((m) => ({
       title: m.title,
@@ -504,8 +477,12 @@ export const api = {
   // Media Details & Streaming
   getMediaDetails: async (itemUrl: string): Promise<MediaDetails> => {
     if (isTauri) return invoke<MediaDetails>("get_media_details", { itemUrl });
-    const bridged = await invokeBridge<MediaDetails>("get_media_details", { itemUrl });
-    if (bridged) return bridged;
+    try {
+      const mirror = await api.getActiveMirror();
+      return await tizenRezka.getMediaDetails(mirror, itemUrl);
+    } catch (e) {
+      console.warn("[Tizen] getMediaDetails direct fetch failed:", e);
+    }
     const found = MOCK_CATALOG.find((m) => m.url === itemUrl) || MOCK_CATALOG[0];
     const isSeries = found.entity_type === "series";
 
@@ -594,8 +571,12 @@ export const api = {
       refererUrl,
     };
     if (isTauri) return invoke<StreamData>("get_stream", args);
-    const bridged = await invokeBridge<StreamData>("get_stream", args);
-    if (bridged) return bridged;
+    try {
+      const mirror = await api.getActiveMirror();
+      return await tizenRezka.getStream(mirror, mediaId, isSeries, translatorId, season, episode);
+    } catch (e) {
+      console.warn("[Tizen] getStream direct fetch failed:", e);
+    }
     return MOCK_STREAM_DATA;
   },
 
@@ -606,8 +587,12 @@ export const api = {
   ): Promise<EpisodesData> => {
     const args = { mediaId, translatorId, refererUrl };
     if (isTauri) return invoke<EpisodesData>("get_episodes", args);
-    const bridged = await invokeBridge<EpisodesData>("get_episodes", args);
-    if (bridged) return bridged;
+    try {
+      const mirror = await api.getActiveMirror();
+      return await tizenRezka.getEpisodes(mirror, mediaId, translatorId);
+    } catch (e) {
+      console.warn("[Tizen] getEpisodes direct fetch failed:", e);
+    }
     return {
       seasons: [
         { id: "1", title: "1 сезон" },
@@ -676,11 +661,7 @@ export const api = {
         return null;
       }
     }
-    try {
-      return await invokeBridge<string | null>("get_backdrop", { title, origTitle, year });
-    } catch {
-      return null;
-    }
+    return null;
   },
 
   getSystemTime: async (): Promise<string> => {

@@ -114,14 +114,6 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
   };
   const [smartRotating, setSmartRotating] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
-  const [bridgeUrlInput, setBridgeUrlInput] = useState<string>(() => {
-    try {
-      return localStorage.getItem("rdx_bridge_url") || "";
-    } catch {
-      return "";
-    }
-  });
-  const [bridgeSaved, setBridgeSaved] = useState(false);
   const [captchaOpening, setCaptchaOpening] = useState(false);
 
   // Appearance & Sound Settings
@@ -1153,44 +1145,6 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                         <Check className="w-3.5 h-3.5" />
                       )}
                       <span>Зберегти</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Samsung Tizen / Web RDX Bridge URL */}
-                <div className="p-4 rounded-2xl bg-zinc-900/40 border border-white/8 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-zinc-400" />
-                    <h3 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
-                      RDX Bridge URL (для Samsung Tizen / Web)
-                    </h3>
-                  </div>
-                  <div data-tv-row="mirror-bridge" className="flex gap-2">
-                    <input
-                      type="text"
-                      value={bridgeUrlInput}
-                      onChange={(e) => {
-                        setBridgeUrlInput(e.target.value);
-                        setBridgeSaved(false);
-                      }}
-                      data-tv-focusable
-                      placeholder="http://192.168.1.100:8787"
-                      className="flex-1 px-4 py-2 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
-                    />
-                    <button
-                      onClick={() => {
-                        try {
-                          const cleaned = bridgeUrlInput.trim().replace(/\/+$/, "");
-                          if (cleaned) localStorage.setItem("rdx_bridge_url", cleaned);
-                          else localStorage.removeItem("rdx_bridge_url");
-                          setBridgeSaved(true);
-                        } catch {}
-                      }}
-                      data-tv-focusable
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>{bridgeSaved ? "Збережено" : "Зберегти"}</span>
                     </button>
                   </div>
                 </div>

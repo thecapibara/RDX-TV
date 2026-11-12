@@ -1,22 +1,29 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   ArrowLeft,
   Play,
   Bookmark as BookmarkIcon,
   Star,
   Loader2,
-  ChevronDown,
   Check,
-  Search,
-  Info,
   Clock,
-  Crown,
   Mic,
+  Film,
+  Tv,
+  X,
 } from "lucide-react";
-import type { Bookmark, MediaCard, MediaDetails, WatchProgress, Translator, EpisodeProgress } from "../types";
+import type {
+  Bookmark,
+  MediaCard,
+  MediaDetails,
+  WatchProgress,
+  Translator,
+  EpisodeProgress,
+} from "../types";
 import { api } from "../services/api";
 import { cn } from "../lib/utils";
-import { playModalOpenSound, suppressHoverSound } from "../services/sound";
+import { playHoverSound, playModalOpenSound, playButtonClickSound, suppressHoverSound } from "../services/sound";
+import { focusFirstInScope, useTvBack } from "../hooks/useTvNavigation";
 
 interface MediaDetailsModalProps {
   media: MediaCard | null;
@@ -27,31 +34,39 @@ interface MediaDetailsModalProps {
     translatorId?: string,
     season?: number,
     episode?: number,
-    initialPositionSec?: number
+    positionSec?: number
   ) => void;
-  isBookmarked: boolean;
-  onToggleBookmark: (bookmark: Bookmark) => void;
+  isBookmarked?: boolean;
+  onToggleBookmark?: (bookmark: Bookmark) => void;
 }
+
+type DetailTab = "episodes" | "details";
 
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   media,
   isOpen,
   onClose,
   onPlay,
-  isBookmarked,
+  isBookmarked = false,
   onToggleBookmark,
 }) => {
+  const [details, setDetails] = useState<MediaDetails | null>(null);
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [details, setDetails] = useState<MediaDetails | null>(null);
   const [savedProgress, setSavedProgress] = useState<WatchProgress | null>(null);
   const [episodeProgressList, setEpisodeProgressList] = useState<EpisodeProgress[]>([]);
   const [selectedTranslator, setSelectedTranslator] = useState<Translator | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [selectedEpisode, setSelectedEpisode] = useState<number>(1);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+  const [maxKnownSeasons, setMaxKnownSeasons] = useState<number>(1);
+  const [activeTab, setActiveTab] = useState<DetailTab>("details");
 
-  // Helper to determine effective bookmark category based on watch progress
+  // TV D-pad voiceover drawer state
+  const [isTranslatorModalOpen, setIsTranslatorModalOpen] = useState(false);
+  const [translatorFilterTab, setTranslatorFilterTab] = useState<"all" | "ukr">("all");
+
   const getBookmarkCategory = (): string => {
     if (
       savedProgress &&
@@ -65,87 +80,73 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     }
     return "favorites";
   };
-  const [maxKnownSeasons, setMaxKnownSeasons] = useState<number>(1);
 
-  // Dropdown states for structured voiceover selector
-  const [isTranslatorDropdownOpen, setIsTranslatorDropdownOpen] = useState(false);
-  const [translatorSearch, setTranslatorSearch] = useState("");
-  const [translatorFilterTab, setTranslatorFilterTab] = useState<"all" | "ukr">("all");
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close translator dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsTranslatorDropdownOpen(false);
-      }
-    };
-    if (isTranslatorDropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isTranslatorDropdownOpen]);
-
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     suppressHoverSound(400);
+    setIsTranslatorModalOpen(false);
     onClose();
-  };
+  }, [onClose]);
 
-  useEffect(() => {
-    if (isOpen) {
-      playModalOpenSound();
-    }
-  }, [isOpen]);
+  // TV Remote Back key: close translator drawer first, otherwise close details screen
+  useTvBack(isOpen && !isTranslatorModalOpen, handleClose);
+  useTvBack(isOpen && isTranslatorModalOpen, () => setIsTranslatorModalOpen(false));
 
-  // Keyboard shortcut: Escape to close modal (or close dropdown if open)
+  // Auto-focus primary CTA when modal opens or translator drawer closes
   useEffect(() => {
     if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.querySelector('[data-player-mode="full"]')) {
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        if (isTranslatorDropdownOpen) {
-          setIsTranslatorDropdownOpen(false);
-        } else {
-          handleClose();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, isTranslatorDropdownOpen]);
+    const t = setTimeout(() => {
+      focusFirstInScope();
+    }, 60);
+    return () => clearTimeout(t);
+  }, [isOpen, isTranslatorModalOpen, details?.id]);
 
   useEffect(() => {
     if (!isOpen || !media) {
       setDetails(null);
-      setSavedProgress(null);
-      setEpisodeProgressList([]);
-      setSelectedTranslator(null);
-      setIsTranslatorDropdownOpen(false);
+      setBackdropUrl(null);
       setFetchError(null);
-      setMaxKnownSeasons(1);
+      setIsTranslatorModalOpen(false);
       return;
     }
 
     let isMounted = true;
+    playModalOpenSound();
+
+    // Try fetching TMDB backdrop immediately in parallel
+    const yearMatch = media.misc_info?.match(/\b(19|20)\d{2}\b/);
+    api
+      .getBackdrop(media.title, undefined, yearMatch?.[0])
+      .then((url) => {
+        if (isMounted && url) setBackdropUrl(url);
+      })
+      .catch(() => {});
+
     const fetchData = async () => {
       setLoading(true);
       setFetchError(null);
       try {
         const [det, initialProgress, initialEpProgress] = await Promise.all([
           api.getMediaDetails(media.url),
-          media.id ? api.getWatchProgress(media.id).catch(() => null) : Promise.resolve(null),
-          media.id ? api.getEpisodeProgress(media.id).catch(() => []) : Promise.resolve([]),
+          api.getWatchProgress(media.id).catch(() => null),
+          api.getEpisodeProgress(media.id).catch(() => []),
         ]);
-
         if (!isMounted) return;
 
-        // Fall back to det.id (parsed from canonical page URL) if media.id was empty or differed
+        // Refine TMDB backdrop using orig_title + year if we didn't get one yet
+        const detYear =
+          det.info_table.find(([k]) => k.toLowerCase().includes("рік") || k.toLowerCase().includes("год"))?.[1]?.match(/\b(19|20)\d{2}\b/)?.[0] ||
+          yearMatch?.[0];
+        api
+          .getBackdrop(det.title, det.orig_title || undefined, detYear)
+          .then((url) => {
+            if (isMounted && url) setBackdropUrl(url);
+          })
+          .catch(() => {});
+
         let progress = initialProgress;
-        let epProgress = initialEpProgress || [];
-        if (det.id && det.id !== media.id) {
+        let epProgress = initialEpProgress;
+
+        if (det.id !== media.id) {
           if (!progress) {
             progress = await api.getWatchProgress(det.id).catch(() => null);
           }
@@ -155,7 +156,6 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           if (!isMounted) return;
         }
 
-        // Check if media.series_info hints at higher season count (e.g. "8 сезон 10 серія" or "S08E10")
         let hintedMax = det.seasons.length;
         if (media.series_info) {
           const m1 = media.series_info.match(/(\d+)\s*сезон/i);
@@ -165,29 +165,31 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         }
         setMaxKnownSeasons(hintedMax);
 
-        // Determine default translator
         let defaultT: Translator | null = null;
         if (det.translators && det.translators.length > 0) {
           const savedT = progress?.translator_id
             ? det.translators.find((t) => t.id === progress.translator_id)
             : null;
 
-          const ukrT = det.translators.find((t) =>
-            t.language?.toLowerCase().includes("украин") ||
-            t.language?.toLowerCase().includes("україн")
+          const ukrT = det.translators.find(
+            (t) =>
+              t.language?.toLowerCase().includes("украин") ||
+              t.language?.toLowerCase().includes("україн")
           );
 
-          defaultT = savedT || ukrT || det.translators.find((t) => t.is_active) || det.translators[0];
+          defaultT =
+            savedT || ukrT || det.translators.find((t) => t.is_active) || det.translators[0];
           setSelectedTranslator(defaultT);
         }
 
-        // Display details immediately (cuts initial load wait in half)
+        const hasSeasons = Boolean(det.seasons && det.seasons.length > 0);
+        setActiveTab(hasSeasons ? "episodes" : "details");
+
         setDetails(det);
         setSavedProgress(progress);
         setEpisodeProgressList(epProgress || []);
         setLoading(false);
 
-        // Default season & episode
         if (progress?.season) {
           const seasonExists = det.seasons.some((s) => parseInt(s.id, 10) === progress.season);
           if (seasonExists) {
@@ -207,10 +209,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           setSelectedEpisode(1);
         }
 
-        // If series, fetch translator-specific episode matrix asynchronously without blocking UI
-        if (det.seasons && det.seasons.length > 0 && defaultT) {
+        if (hasSeasons && defaultT) {
           setLoadingEpisodes(true);
-          api.getEpisodes(det.id, defaultT.id, det.url)
+          api
+            .getEpisodes(det.id, defaultT.id, det.url)
             .then((epData) => {
               if (isMounted && epData.episodes && epData.episodes.length > 0) {
                 if (epData.seasons.length > 0) {
@@ -246,16 +248,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     };
 
     fetchData();
-
     return () => {
       isMounted = false;
     };
   }, [isOpen, media]);
 
-  // When translator changes for a series, fetch updated seasons & episodes
   const handleTranslatorSelect = async (translator: Translator) => {
     setSelectedTranslator(translator);
-    setIsTranslatorDropdownOpen(false);
+    setIsTranslatorModalOpen(false);
     if (!details || details.seasons.length === 0) return;
 
     setLoadingEpisodes(true);
@@ -274,10 +274,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         };
       });
 
-      // If currently selectedSeason is not available in the new translator's seasons, switch to the first season
-      const seasonExists = data.seasons.some(
-        (s) => parseInt(s.id, 10) === selectedSeason
-      );
+      const seasonExists = data.seasons.some((s) => parseInt(s.id, 10) === selectedSeason);
       if (!seasonExists && data.seasons.length > 0) {
         const firstSeason = parseInt(data.seasons[0].id, 10);
         setSelectedSeason(isNaN(firstSeason) ? 1 : firstSeason);
@@ -296,22 +293,18 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     ? Boolean(details.seasons && details.seasons.length > 0)
     : Boolean(
         media.series_info ||
-        media.entity_type?.toLowerCase().includes("series") ||
-        media.entity_type?.toLowerCase().includes("сериал") ||
-        media.entity_type?.toLowerCase().includes("серіал")
+          media.entity_type?.toLowerCase().includes("series") ||
+          media.entity_type?.toLowerCase().includes("сериал") ||
+          media.entity_type?.toLowerCase().includes("серіал")
       );
 
-  // Episodes for current selected season
   const currentSeasonEpisodes =
-    details?.episodes.filter(
-      (ep) => Number(ep.season_id) === Number(selectedSeason)
-    ) || [];
+    details?.episodes.filter((ep) => Number(ep.season_id) === Number(selectedSeason)) || [];
 
-  // Check if media is actually available to stream (or is an upcoming unreleased title "В очікуванні")
   const hasAvailableStream = Boolean(
     (details?.translators && details.translators.length > 0) ||
-    (details?.initial_streams && details.initial_streams.qualities.length > 0) ||
-    (details?.episodes && details.episodes.length > 0)
+      (details?.initial_streams && details.initial_streams.qualities.length > 0) ||
+      (details?.episodes && details.episodes.length > 0)
   );
 
   const handleStartPlayback = (season?: number, ep?: number) => {
@@ -321,22 +314,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     const playEp = ep ?? selectedEpisode;
 
     const epProg = isSeries
-      ? episodeProgressList.find(
-          (p) => p.season === playSeason && p.episode === playEp
-        )
+      ? episodeProgressList.find((p) => p.season === playSeason && p.episode === playEp)
       : null;
 
     let initialPos = 0;
     if (epProg && epProg.duration_sec > 0) {
       const pct = (epProg.position_sec / epProg.duration_sec) * 100;
-      if (pct < 90) {
-        initialPos = epProg.position_sec;
-      }
+      if (pct < 90) initialPos = epProg.position_sec;
     } else if (
       savedProgress &&
-      (!isSeries ||
-        (savedProgress.season === playSeason &&
-          savedProgress.episode === playEp))
+      (!isSeries || (savedProgress.season === playSeason && savedProgress.episode === playEp))
     ) {
       initialPos = savedProgress.position_sec;
     }
@@ -350,7 +337,6 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     );
   };
 
-  // Ukrainian translators list
   const ukrTranslators =
     details?.translators.filter(
       (t) =>
@@ -358,547 +344,444 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         t.language?.toLowerCase().includes("україн")
     ) || [];
 
-  // Filtered translators for dropdown (prioritizing Ukrainian dubs at the top)
-  const filteredTranslators = (() => {
+  const sortedTranslators = (() => {
     if (!details?.translators) return [];
-    let list = [...details.translators];
-    if (translatorSearch.trim()) {
-      const q = translatorSearch.toLowerCase();
-      list = list.filter((t) => t.name.toLowerCase().includes(q));
-    }
-    return list.sort((a, b) => {
-      const aUkr = a.language?.toLowerCase().includes("украин") || a.language?.toLowerCase().includes("україн");
-      const bUkr = b.language?.toLowerCase().includes("украин") || b.language?.toLowerCase().includes("україн");
+    const base = translatorFilterTab === "ukr" ? ukrTranslators : [...details.translators];
+    return base.sort((a, b) => {
+      const aUkr =
+        a.language?.toLowerCase().includes("украин") ||
+        a.language?.toLowerCase().includes("україн");
+      const bUkr =
+        b.language?.toLowerCase().includes("украин") ||
+        b.language?.toLowerCase().includes("україн");
       if (aUkr && !bUkr) return -1;
       if (!aUkr && bUkr) return 1;
       return 0;
     });
   })();
 
+  const fallbackPoster = details?.high_res_poster || details?.poster || media.poster;
+  const heroImage = backdropUrl || fallbackPoster;
+  const isUsingTmdbBackdrop = Boolean(backdropUrl);
+
+  // Extract concise metadata badges
+  const yearVal = details?.info_table.find(([k]) => k.toLowerCase().includes("рік") || k.toLowerCase().includes("год"))?.[1];
+  const durationVal = details?.info_table.find(([k]) => k.toLowerCase().includes("тривалість") || k.toLowerCase().includes("время"))?.[1];
+  const genreVal = details?.info_table.find(([k]) => k.toLowerCase().includes("жанр"))?.[1];
+
   return (
     <div
+      data-tv-scope="modal"
       data-modal-open="true"
-      className="fixed inset-0 z-50 bg-[var(--bg-base,#000000)] overflow-y-auto overflow-x-hidden select-none transition-colors duration-250"
+      className="fixed inset-0 z-50 bg-[var(--bg-base,#000000)] overflow-y-auto overflow-x-hidden select-none"
     >
-      {/* Top Floating Back Button */}
-      <button
-        onClick={handleClose}
-        className="fixed top-6 left-6 sm:left-10 lg:left-14 z-40 flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 text-zinc-300 hover:text-white border border-white/15 backdrop-blur-md transition-all shadow-2xl active:scale-95 cursor-pointer"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        <span className="text-xs font-semibold">Назад</span>
-      </button>
-
-      {/* Full Modal Layout (Rendered INSTANTLY with ambient backdrop and poster) */}
-      <div className="relative w-full">
-        {/* Full-Bleed Atmospheric Backdrop with Ambient Soft-Focus Blur */}
-        <div className="relative w-full h-[55vh] min-h-[420px] max-h-[620px] overflow-hidden pointer-events-none transform-gpu [isolation:isolate]">
+      {/* Apple TV / Disney+ Full-Bleed Right-Aligned Hero Section */}
+      <div className="relative min-h-[72vh] w-full flex flex-col justify-end">
+        {/* Right-side / Full-bleed Backdrop Image */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <img
-            src={details?.high_res_poster || details?.poster || media.poster}
+            src={heroImage}
             alt={details?.title || media.title}
             decoding="async"
-            className="w-full h-full object-cover object-[center_20%] sm:object-[75%_20%] opacity-35 sm:opacity-40 scale-110 blur-[12px] sm:blur-[18px] saturate-125 transform-gpu"
+            className={cn(
+              "w-full h-full object-cover transition-opacity duration-700",
+              isUsingTmdbBackdrop
+                ? "object-right-top sm:object-[70%_20%] opacity-90"
+                : "object-right opacity-55 blur-[4px] scale-105"
+            )}
           />
-          {/* Smooth seamless multi-stop gradients for cinematic vignette */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/80 to-transparent transition-colors duration-250" />
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/70 to-transparent transition-colors duration-250" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-[var(--bg-base,#000000)] transition-colors duration-250" />
+          {/* Left-to-right cinematic fade so left text & buttons are 100% legible */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/90 via-40% to-transparent" />
+          {/* Top subtle vignette */}
+          <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[var(--bg-base,#000000)]/70 to-transparent" />
+          {/* Bottom seamless fade into tabs/episodes */}
+          <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/85 to-transparent" />
         </div>
 
-        {/* Fluid Full-Width Details Content Container */}
-        <div className="w-full px-[clamp(1.5rem,5vw,5rem)] -mt-44 sm:-mt-52 relative z-10 pb-24 space-y-10">
-          {/* Top Hero Row */}
-          <div className="flex flex-col md:flex-row items-start gap-8 lg:gap-12">
-            {/* Vertical Crisp Poster */}
-            <div className="w-56 sm:w-64 lg:w-76 aspect-[2/3] rounded-2xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.95)] border border-white/15 flex-shrink-0 bg-zinc-900">
-              <img
-                src={details?.poster || media.poster}
-                alt={details?.title || media.title}
-                className="w-full h-full object-cover"
-              />
-            </div>
+        {/* Left Content Column (10-foot safe-area padding) */}
+        <div className="relative z-10 px-[4vw] pt-10 pb-8 max-w-3xl space-y-5">
+          {/* Type & Rating Badges Row */}
+          <div className="flex flex-wrap items-center gap-2.5 text-sm font-semibold">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 text-white font-bold uppercase tracking-wider text-xs shadow-lg shadow-rose-950/50">
+              {isSeries ? <Tv className="w-3.5 h-3.5" /> : <Film className="w-3.5 h-3.5" />}
+              {isSeries ? "Серіал" : "Фільм"}
+            </span>
 
-            {/* Title, Badges, Actions, Description */}
-            <div className="flex-1 space-y-5 min-w-0">
-              {/* Badges Row */}
-              <div className="flex flex-wrap items-center gap-2.5">
-                {(details?.imdb_rating || media.rating) && (
-                  <span className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    <Star className="w-3.5 h-3.5 fill-amber-400" />
-                    IMDb {details?.imdb_rating || media.rating}
-                  </span>
-                )}
-                {details?.kp_rating && (
-                  <span className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                    Кинопоиск {details.kp_rating}
-                  </span>
-                )}
-                <span className="px-3 py-1 rounded-xl text-xs font-bold uppercase bg-rose-600/90 text-white border border-rose-400/30">
-                  {isSeries ? "Серіал" : "Фільм"}
-                </span>
-                {details && !hasAvailableStream && (
-                  <span className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/35">
-                    <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    В очікуванні
-                  </span>
-                )}
-                {media.misc_info && (
-                  <span className="text-xs text-zinc-300 font-medium px-1">
-                    {media.misc_info}
-                  </span>
-                )}
-              </div>
-
-              {/* Main Titles */}
-              <div className="space-y-1">
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
-                  {details?.title || media.title}
-                </h1>
-                {details?.orig_title && (
-                  <p className="text-base sm:text-lg font-medium text-zinc-400">
-                    {details.orig_title}
-                  </p>
-                )}
-              </div>
-
-              {/* Actions & Details Area (Instant Skeleton Shimmer or Real Actions) */}
-              {loading && !details ? (
-                <div className="space-y-5 pt-1">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2.5 px-7 py-3.5 rounded-2xl bg-gradient-to-r from-rose-700/70 via-rose-600/70 to-rose-500/70 text-white font-bold text-sm shadow-xl shadow-rose-950/40 select-none">
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Завантаження плеєра...</span>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        const bookmarkItem: Bookmark = {
-                          media_id: media.id,
-                          media_url: media.url,
-                          title: media.title,
-                          poster_url: media.poster,
-                          media_type: isSeries ? "series" : "movie",
-                          year_info: media.misc_info || null,
-                          rating: media.rating || null,
-                          category: getBookmarkCategory(),
-                          added_at: Math.floor(Date.now() / 1000),
-                        };
-                        onToggleBookmark(bookmarkItem);
-                      }}
-                      className={cn(
-                        "flex items-center gap-2 px-5 py-3.5 rounded-2xl font-semibold text-sm border transition-all cursor-pointer active:scale-95",
-                        isBookmarked
-                          ? "bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30"
-                          : "bg-white/10 hover:bg-white/20 text-white border-white/15"
-                      )}
-                    >
-                      <BookmarkIcon
-                        className={cn("w-4 h-4", isBookmarked && "fill-amber-400")}
-                      />
-                      <span>{isBookmarked ? "У закладках" : "У закладки"}</span>
-                    </button>
-                  </div>
-
-                  {/* Shimmer Description Lines */}
-                  <div className="space-y-2.5 pt-1 max-w-3xl animate-pulse">
-                    <div className="h-4 bg-white/10 rounded-lg w-full" />
-                    <div className="h-4 bg-white/10 rounded-lg w-11/12" />
-                    <div className="h-4 bg-white/10 rounded-lg w-3/4" />
-                  </div>
-
-                  <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
-                    <span>Отримання інформації про озвучення та якість...</span>
-                  </div>
-                </div>
-              ) : fetchError ? (
-                <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-200 text-xs flex items-center justify-between gap-4 mt-2">
-                  <span>{fetchError}</span>
-                </div>
-              ) : details ? (
-                <>
-                  {/* Primary Action Buttons */}
-                  <div className="flex flex-wrap items-center gap-2.5 pt-2">
-                    {hasAvailableStream ? (
-                      <button
-                        onClick={() => handleStartPlayback()}
-                        className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-rose-700 via-rose-600 to-rose-500 hover:from-rose-600 hover:to-rose-400 text-white font-bold text-sm shadow-xl shadow-rose-950/60 active:scale-95 transition-all cursor-pointer shrink-0"
-                      >
-                        <Play className="w-4 h-4 fill-current" />
-                        <span>
-                          {savedProgress && savedProgress.position_sec > 10
-                            ? `Продовжити (${Math.floor(savedProgress.position_sec / 60)} хв)`
-                            : isSeries
-                            ? `Дивитися S${selectedSeason}E${selectedEpisode}`
-                            : "Дивитися"}
-                        </span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-sm shadow-md select-none cursor-default shrink-0">
-                        <Clock className="w-4 h-4 text-amber-400" />
-                        <span>В очікуванні</span>
-                      </div>
-                    )}
-
-                    {/* Structured Voiceover Selector Dropdown Next to Watch Button */}
-                    {details.translators && details.translators.length > 0 && (
-                      <div ref={dropdownRef} className="relative shrink-0">
-                        <button
-                          onClick={() => setIsTranslatorDropdownOpen(!isTranslatorDropdownOpen)}
-                          className="flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-zinc-900 border border-white/15 hover:border-rose-500/60 hover:bg-zinc-850 text-white text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-lg active:scale-95"
-                          title="Обрати студію озвучення"
-                        >
-                          <Mic className="w-4 h-4 text-rose-400 shrink-0" />
-                          {selectedTranslator?.language?.toLowerCase().includes("украин") ||
-                          selectedTranslator?.language?.toLowerCase().includes("україн") ? (
-                            <span className="text-sm shrink-0">🇺🇦</span>
-                          ) : null}
-                          <span className="truncate max-w-[130px] sm:max-w-[170px]">
-                            {selectedTranslator?.name || "Озвучення"}
-                          </span>
-                          {selectedTranslator?.is_premium && (
-                            <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0">
-                              <Crown className="w-3 h-3 text-amber-400" />
-                            </span>
-                          )}
-                          <ChevronDown
-                            className={cn(
-                              "w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0",
-                              isTranslatorDropdownOpen && "rotate-180"
-                            )}
-                          />
-                          <span className="text-[11px] text-zinc-500 font-mono">
-                            {details.translators.length}
-                          </span>
-                        </button>
-
-                        {/* Searchable Dropdown Popover */}
-                        {isTranslatorDropdownOpen && (
-                          <div className="absolute top-14 left-0 w-80 sm:w-96 max-h-96 overflow-hidden bg-zinc-900 border border-white/20 rounded-2xl shadow-2xl p-3 z-50 flex flex-col space-y-2 ring-1 ring-black/60">
-                            {/* Search input inside dropdown */}
-                            <div className="relative">
-                              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
-                              <input
-                                autoFocus
-                                type="text"
-                                value={translatorSearch}
-                                onChange={(e) => setTranslatorSearch(e.target.value)}
-                                placeholder="Пошук озвучення..."
-                                className="w-full bg-zinc-800 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
-                              />
-                            </div>
-
-                            {/* Tabs */}
-                            <div className="flex gap-1 border-b border-white/10 pb-1.5">
-                              <button
-                                onClick={() => setTranslatorFilterTab("all")}
-                                className={cn(
-                                  "px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer",
-                                  translatorFilterTab === "all"
-                                    ? "bg-rose-600 text-white"
-                                    : "text-zinc-400 hover:text-white"
-                                )}
-                              >
-                                Всі ({details.translators.length})
-                              </button>
-                              {ukrTranslators.length > 0 && (
-                                <button
-                                  onClick={() => setTranslatorFilterTab("ukr")}
-                                  className={cn(
-                                    "px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer",
-                                    translatorFilterTab === "ukr"
-                                      ? "bg-rose-600 text-white"
-                                      : "text-zinc-400 hover:text-white"
-                                  )}
-                                >
-                                  <span>🇺🇦</span>
-                                  <span>Українські ({ukrTranslators.length})</span>
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Studios List */}
-                            <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
-                              {filteredTranslators.map((t) => {
-                                const isSelected = selectedTranslator?.id === t.id;
-                                const isUkr =
-                                  t.language?.toLowerCase().includes("украин") ||
-                                  t.language?.toLowerCase().includes("україн");
-
-                                return (
-                                  <button
-                                    key={t.id}
-                                    onClick={() => handleTranslatorSelect(t)}
-                                    className={cn(
-                                      "w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all text-left cursor-pointer",
-                                      isSelected
-                                        ? "bg-rose-600 text-white"
-                                        : "hover:bg-white/10 text-zinc-200"
-                                    )}
-                                  >
-                                    <div className="flex items-center gap-2 truncate">
-                                      {isUkr && <span>🇺🇦</span>}
-                                      <span className="truncate">{t.name}</span>
-                                      {t.is_premium && (
-                                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-0.5 shrink-0">
-                                          <Crown className="w-2.5 h-2.5 text-amber-400" />
-                                          PREMIUM
-                                        </span>
-                                      )}
-                                    </div>
-                                    {isSelected && <Check className="w-4 h-4 flex-shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <button
-                      onClick={() => {
-                        const bookmarkItem: Bookmark = {
-                          media_id: details.id,
-                          media_url: details.url,
-                          title: details.title,
-                          poster_url: details.poster,
-                          media_type: isSeries ? "series" : "movie",
-                          year_info: details.year ? [details.year, details.countries?.[0]].filter(Boolean).join(", ") : (media?.misc_info || null),
-                          rating: details.imdb_rating || details.kp_rating || null,
-                          category: getBookmarkCategory(),
-                          added_at: Math.floor(Date.now() / 1000),
-                        };
-                        onToggleBookmark(bookmarkItem);
-                      }}
-                      className={cn(
-                        "flex items-center gap-2 px-5 py-3.5 rounded-2xl font-semibold text-xs sm:text-sm border transition-all cursor-pointer active:scale-95 shrink-0",
-                        isBookmarked
-                          ? "bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30"
-                          : !hasAvailableStream
-                          ? "bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-xl shadow-rose-950/60 font-bold"
-                          : "bg-white/10 hover:bg-white/20 text-white border-white/15"
-                      )}
-                    >
-                      <BookmarkIcon
-                        className={cn("w-4 h-4", isBookmarked && "fill-amber-400")}
-                      />
-                      <span>{isBookmarked ? "У закладках" : "У закладки"}</span>
-                    </button>
-                  </div>
-
-                  {/* Premium Translator Warning Notice */}
-                  {selectedTranslator?.is_premium && (
-                    <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs">
-                      <Crown className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-semibold text-amber-300">
-                          Озвучення доступне лише для передплатників HDRezka Premium.
-                        </span>
-                        <p className="text-[11px] text-amber-200/80 mt-0.5 leading-relaxed">
-                          Без підписки замість фільму транслюється 1-хвилинне промо-відео сайту із QR-кодом.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Informational banner if title has no streams yet ("В очікуванні") */}
-                  {!hasAvailableStream && (
-                    <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs sm:text-sm max-w-2xl">
-                      <Clock className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                      <div className="space-y-0.5">
-                        <p className="font-semibold text-amber-300">
-                          Фільм ще не вийшов у прокат або очікує надходження
-                        </p>
-                        <p className="text-zinc-400 text-xs leading-relaxed">
-                          Відеопотік або озвучення поки відсутні на HDRezka. Ви можете додати тайтл у закладки, щоб не пропустити появу плеєра на сайті!
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Description */}
-                  {details.description && (
-                    <p className="text-sm sm:text-base text-zinc-300 leading-relaxed max-w-4xl pt-1">
-                      {details.description}
-                    </p>
-                  )}
-                </>
-              ) : null}
-              </div>
-            </div>
-
-            {/* Below Hero Row: Seasons & Episodes (ALWAYS show seasons row for series) */}
-            {details && isSeries && details.seasons.length >= 1 && (
-              <div className="space-y-6 pt-6 border-t border-white/10">
-                {/* Seasons Row */}
-                <div className="space-y-2.5">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">
-                      Сезони
-                    </h3>
-                    {maxKnownSeasons > 1 && details.seasons.length < maxKnownSeasons && (
-                      <span className="text-xs text-amber-400/90 font-medium flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-xl">
-                        <Info className="w-3.5 h-3.5 flex-shrink-0" />
-                        <span>
-                          У цій озвучці доступно {details.seasons.length} з {maxKnownSeasons} сезонів. Оберіть іншу озвучку вище для перегляду решти.
-                        </span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2.5 overflow-x-auto pb-2 no-scrollbar">
-                    {details.seasons.map((s) => {
-                      const seasonNum = parseInt(s.id, 10);
-                      const isSelected = selectedSeason === seasonNum;
-                      return (
-                        <button
-                          key={s.id}
-                          onClick={() => {
-                            setSelectedSeason(seasonNum);
-                            setSelectedEpisode(1);
-                          }}
-                          className={cn(
-                            "px-5 py-2.5 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer",
-                            isSelected
-                              ? "bg-white text-zinc-950 shadow-md font-extrabold"
-                              : "bg-zinc-900 text-zinc-400 hover:text-white border border-white/10"
-                          )}
-                        >
-                          {s.title}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Episodes Grid with Fluid CSS Grid */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">
-                      Серії ({currentSeasonEpisodes.length})
-                    </h3>
-                    {loadingEpisodes && (
-                      <div className="flex items-center gap-1.5 text-xs text-rose-400">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Оновлення...</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-2.5">
-                    {currentSeasonEpisodes.map((ep) => {
-                      const epNum = parseInt(ep.episode_id, 10);
-                      const epSeasonNum = parseInt(ep.season_id, 10);
-                      const isSelected =
-                        selectedSeason === epSeasonNum &&
-                        selectedEpisode === epNum;
-
-                      const isSaved =
-                        savedProgress &&
-                        savedProgress.season === epSeasonNum &&
-                        savedProgress.episode === epNum;
-
-                      const epProg = episodeProgressList.find(
-                        (p) => p.season === epSeasonNum && p.episode === epNum
-                      );
-                      const progressPct =
-                        epProg && epProg.duration_sec > 0
-                          ? Math.min(100, Math.round((epProg.position_sec / epProg.duration_sec) * 100))
-                          : 0;
-                      const isWatched = progressPct >= 90;
-
-                      return (
-                        <button
-                          key={`${ep.season_id}-${ep.episode_id}`}
-                          onClick={() => {
-                            setSelectedEpisode(epNum);
-                            handleStartPlayback(epSeasonNum, epNum);
-                          }}
-                          data-episode-watched={isWatched ? "true" : undefined}
-                          data-episode-progress={progressPct > 0 ? progressPct : undefined}
-                          className={cn(
-                            "relative flex flex-col items-center justify-center p-3.5 rounded-xl border text-xs font-medium transition-all cursor-pointer group overflow-hidden",
-                            isSelected
-                              ? "bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-950/60"
-                              : isWatched
-                              ? "bg-emerald-950/15 border-emerald-500/25 hover:bg-emerald-900/20 text-zinc-300"
-                              : "bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border-white/10"
-                          )}
-                        >
-                          {isWatched && (
-                            <div
-                              title="Переглянуто"
-                              className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-emerald-500/25 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shadow-sm"
-                            >
-                              <Check className="w-3 h-3" />
-                            </div>
-                          )}
-
-                          {!isWatched && isSaved && (
-                            <div
-                              title="Переглядається зараз"
-                              className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]"
-                            />
-                          )}
-
-                          <span className="font-bold text-base">
-                            {ep.episode_id}
-                          </span>
-                          <span
-                            className={cn(
-                              "text-[11px] truncate max-w-full transition-colors",
-                              isSelected
-                                ? "text-white/95 font-medium"
-                                : "text-zinc-400 group-hover:text-zinc-200"
-                            )}
-                          >
-                            серія
-                          </span>
-
-                          {progressPct > 0 && (
-                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 overflow-hidden rounded-b-xl">
-                              <div
-                                className={cn(
-                                  "h-full transition-all",
-                                  isWatched ? "bg-emerald-500" : "bg-rose-500"
-                                )}
-                                style={{ width: `${progressPct}%` }}
-                              />
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+            {(details?.imdb_rating || media.rating) && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                IMDb {details?.imdb_rating || media.rating}
+              </span>
             )}
 
-            {/* Information Table (Metadata) */}
-            {details && details.info_table && details.info_table.length > 0 && (
-              <div className="space-y-3 pt-6 border-t border-white/10">
-                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">
-                  Інформація про фільм
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-xs">
-                  {details.info_table.map(([key, val], idx) => (
-                    <div
-                      key={idx}
-                      className="flex py-1.5 border-b border-white/5"
-                    >
-                      <span className="w-1/3 text-zinc-400 font-medium">
-                        {key.replace(/:+$/, "")}:
-                      </span>
-                      <span className="w-2/3 text-zinc-200">{val}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {details?.kp_rating && (
+              <span className="px-3 py-1 rounded-lg bg-white/10 text-zinc-200 border border-white/10">
+                KP {details.kp_rating}
+              </span>
+            )}
+
+            {yearVal && <span className="text-zinc-300">{yearVal}</span>}
+            {durationVal && <span className="text-zinc-300">• {durationVal}</span>}
+          </div>
+
+          {/* Title & Original Title */}
+          <div className="space-y-1.5">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-[1.08] drop-shadow-2xl">
+              {details?.title || media.title}
+            </h1>
+            {details?.orig_title && (
+              <p className="text-base sm:text-lg text-zinc-400 font-medium">
+                {details.orig_title}
+              </p>
+            )}
+            {genreVal && (
+              <p className="text-sm text-zinc-300/90 font-medium pt-0.5">{genreVal}</p>
             )}
           </div>
-        </div>
 
+          {/* Short Synopsis */}
+          {details?.description && (
+            <p className="text-base sm:text-lg text-zinc-200/90 leading-relaxed line-clamp-3 max-w-2xl">
+              {details.description}
+            </p>
+          )}
+
+          {/* Error Banner */}
+          {fetchError && (
+            <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-sm">
+              {fetchError}
+            </div>
+          )}
+
+          {/* Primary TV Action Buttons Row */}
+          <div data-tv-row="details-actions" className="flex flex-wrap items-center gap-3.5 pt-2">
+            {loading ? (
+              <div className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-white/10 text-zinc-200 text-base font-semibold">
+                <Loader2 className="w-5 h-5 animate-spin text-rose-500" />
+                <span>Завантаження...</span>
+              </div>
+            ) : hasAvailableStream ? (
+              <button
+                data-tv-focusable
+                data-tv-autofocus
+                onClick={() => {
+                  playButtonClickSound();
+                  handleStartPlayback();
+                }}
+                className="flex items-center gap-3 px-8 py-3.5 rounded-2xl bg-white text-black hover:bg-zinc-200 font-extrabold text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer"
+              >
+                <Play className="w-5 h-5 fill-current" />
+                <span>
+                  {savedProgress && savedProgress.position_sec > 15
+                    ? isSeries
+                      ? `Продовжити S${savedProgress.season || selectedSeason}E${savedProgress.episode || selectedEpisode}`
+                      : "Продовжити"
+                    : isSeries
+                    ? `Дивитися S${selectedSeason}E${selectedEpisode}`
+                    : "Дивитися"}
+                </span>
+              </button>
+            ) : (
+              <div className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-base font-bold">
+                <Clock className="w-5 h-5" />
+                <span>Очікується реліз</span>
+              </div>
+            )}
+
+            {/* Voiceover Selector Button (opens D-pad modal instead of mouse popover) */}
+            {details && details.translators.length > 0 && (
+              <button
+                data-tv-focusable
+                onClick={() => {
+                  playButtonClickSound();
+                  setIsTranslatorModalOpen(true);
+                }}
+                className="flex items-center gap-2.5 px-5 py-3.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 text-base font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer max-w-xs"
+              >
+                <Mic className="w-4 h-4 text-rose-400 shrink-0" />
+                <span className="truncate">{selectedTranslator?.name || "Озвучення"}</span>
+              </button>
+            )}
+
+            {/* Bookmark Toggle */}
+            {details && onToggleBookmark && (
+              <button
+                data-tv-focusable
+                onClick={() => {
+                  playButtonClickSound();
+                  onToggleBookmark({
+                    media_id: details.id,
+                    media_type: isSeries ? "series" : "film",
+                    title: details.title,
+                    poster_url: details.poster,
+                    media_url: details.url,
+                    year_info: yearVal || media.misc_info || null,
+                    rating: details.imdb_rating || media.rating || null,
+                    category: getBookmarkCategory(),
+                    added_at: Math.floor(Date.now() / 1000),
+                  });
+                }}
+                title={isBookmarked ? "Видалити із закладок" : "Додати в закладки"}
+                className={cn(
+                  "p-3.5 rounded-2xl border transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer",
+                  isBookmarked
+                    ? "bg-amber-500/20 text-amber-300 border-amber-400/50"
+                    : "bg-zinc-900/90 text-zinc-200 border-white/15 hover:bg-zinc-800"
+                )}
+              >
+                <BookmarkIcon className={cn("w-5 h-5", isBookmarked && "fill-amber-400")} />
+              </button>
+            )}
+
+            {/* Back Button (also mapped to remote Back/Escape) */}
+            <button
+              data-tv-focusable
+              onClick={handleClose}
+              title="Назад"
+              className="flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 text-base font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span>Назад</span>
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Bottom Tabs & Content (Apple TV / Disney+ Style) */}
+      {details && (
+        <div className="relative z-10 px-[4vw] pb-14 space-y-6">
+          {/* Tabs Bar */}
+          <div data-tv-row="details-tabs" className="flex items-center gap-6 border-b border-white/10 pb-3">
+            {isSeries && (
+              <button
+                data-tv-focusable
+                onClick={() => {
+                  playButtonClickSound();
+                  setActiveTab("episodes");
+                }}
+                className={cn(
+                  "text-base font-bold tracking-wider uppercase px-3 py-1.5 rounded-xl transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 cursor-pointer",
+                  activeTab === "episodes"
+                    ? "text-white bg-white/10"
+                    : "text-zinc-400 hover:text-zinc-200"
+                )}
+              >
+                Серії {maxKnownSeasons > 1 ? `(${maxKnownSeasons} сез.)` : ""}
+              </button>
+            )}
+            <button
+              data-tv-focusable
+              onClick={() => {
+                playButtonClickSound();
+                setActiveTab("details");
+              }}
+              className={cn(
+                "text-base font-bold tracking-wider uppercase px-3 py-1.5 rounded-xl transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 cursor-pointer",
+                activeTab === "details"
+                  ? "text-white bg-white/10"
+                  : "text-zinc-400 hover:text-zinc-200"
+              )}
+            >
+              Деталі
+            </button>
+          </div>
+
+          {/* Series Tab: Seasons + Episodes */}
+          {activeTab === "episodes" && isSeries && (
+            <div className="space-y-5">
+              {/* Season Selector Strip */}
+              {details.seasons.length > 0 && (
+                <div data-tv-row="details-seasons" className="flex flex-wrap items-center gap-2.5">
+                  {details.seasons.map((s) => {
+                    const sNum = parseInt(s.id, 10) || 1;
+                    const isActive = Number(selectedSeason) === sNum;
+                    return (
+                      <button
+                        key={s.id}
+                        data-tv-focusable
+                        onClick={() => {
+                          playButtonClickSound();
+                          setSelectedSeason(sNum);
+                          setSelectedEpisode(1);
+                        }}
+                        className={cn(
+                          "px-4 py-2 rounded-xl text-sm font-bold transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer border",
+                          isActive
+                            ? "bg-rose-600 text-white border-rose-400/50 shadow-lg"
+                            : "bg-zinc-900 text-zinc-300 border-white/10 hover:bg-zinc-800"
+                        )}
+                      >
+                        {s.title}
+                      </button>
+                    );
+                  })}
+                  {loadingEpisodes && (
+                    <Loader2 className="w-5 h-5 animate-spin text-rose-500 ml-2" />
+                  )}
+                </div>
+              )}
+
+              {/* Episodes Grid */}
+              <div
+                data-tv-row="details-episodes"
+                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5"
+              >
+                {currentSeasonEpisodes.map((ep) => {
+                  const epNum = parseInt(ep.episode_id, 10) || 1;
+                  const epProg = episodeProgressList.find(
+                    (p) => p.season === selectedSeason && p.episode === epNum
+                  );
+                  const pct =
+                    epProg && epProg.duration_sec > 0
+                      ? Math.min(100, Math.round((epProg.position_sec / epProg.duration_sec) * 100))
+                      : 0;
+                  const isCurrent = selectedEpisode === epNum;
+
+                  return (
+                    <button
+                      key={`${ep.season_id}-${ep.episode_id}`}
+                      data-tv-focusable
+                      onFocus={playHoverSound}
+                      onClick={() => {
+                        playButtonClickSound();
+                        setSelectedEpisode(epNum);
+                        handleStartPlayback(selectedSeason, epNum);
+                      }}
+                      className={cn(
+                        "relative flex flex-col justify-between p-4 rounded-2xl text-left border transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer overflow-hidden",
+                        isCurrent
+                          ? "bg-rose-600/20 border-rose-500/60 text-white"
+                          : "bg-zinc-900/90 border-white/10 text-zinc-200 hover:bg-zinc-800"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-bold text-white">
+                          {ep.title || `Серія ${epNum}`}
+                        </span>
+                        <Play className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      </div>
+                      {pct > 0 && (
+                        <div className="mt-3 h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-rose-500 rounded-full"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Details Tab: Full Description & Info Table */}
+          {activeTab === "details" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-3">
+                <h3 className="text-lg font-bold text-white">Про фільм / серіал</h3>
+                <p className="text-base text-zinc-300 leading-relaxed">
+                  {details.description || "Опис відсутній."}
+                </p>
+              </div>
+              <div className="space-y-3 bg-zinc-900/60 border border-white/10 rounded-2xl p-5">
+                {details.info_table.map(([label, value], idx) => (
+                  <div key={idx} className="text-sm flex flex-col gap-0.5">
+                    <span className="text-zinc-400 font-medium">{label}</span>
+                    <span className="text-zinc-100 font-semibold">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* D-Pad Friendly Voiceover Selection Modal */}
+      {isTranslatorModalOpen && details && (
+        <div
+          data-tv-scope="modal"
+          className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md flex items-center justify-center p-6"
+        >
+          <div className="w-full max-w-2xl max-h-[82vh] bg-zinc-950 border border-white/15 rounded-3xl p-6 flex flex-col gap-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2.5">
+                <Mic className="w-5 h-5 text-rose-500" />
+                <span>Вибір озвучення</span>
+              </h2>
+              <button
+                data-tv-focusable
+                onClick={() => setIsTranslatorModalOpen(false)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-200 focus:outline-none focus:ring-4 focus:ring-rose-500 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filter Pills */}
+            <div data-tv-row="translator-filters" className="flex items-center gap-3">
+              <button
+                data-tv-focusable
+                onClick={() => setTranslatorFilterTab("all")}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-sm font-bold border transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 cursor-pointer",
+                  translatorFilterTab === "all"
+                    ? "bg-rose-600 text-white border-rose-400/50"
+                    : "bg-zinc-900 text-zinc-300 border-white/10"
+                )}
+              >
+                Всі ({details.translators.length})
+              </button>
+              {ukrTranslators.length > 0 && (
+                <button
+                  data-tv-focusable
+                  onClick={() => setTranslatorFilterTab("ukr")}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-sm font-bold border transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 cursor-pointer",
+                    translatorFilterTab === "ukr"
+                      ? "bg-rose-600 text-white border-rose-400/50"
+                      : "bg-zinc-900 text-zinc-300 border-white/10"
+                  )}
+                >
+                  🇺🇦 Українські ({ukrTranslators.length})
+                </button>
+              )}
+            </div>
+
+            {/* Translator List */}
+            <div className="overflow-y-auto space-y-2 pr-1">
+              {sortedTranslators.map((t, idx) => {
+                const isSelected = selectedTranslator?.id === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    data-tv-focusable
+                    data-tv-autofocus={isSelected || idx === 0 ? "true" : undefined}
+                    onClick={() => {
+                      playButtonClickSound();
+                      handleTranslatorSelect(t);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-left border transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 cursor-pointer",
+                      isSelected
+                        ? "bg-rose-600/20 border-rose-500 text-white"
+                        : "bg-zinc-900/90 border-white/10 text-zinc-200 hover:bg-zinc-800"
+                    )}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-base font-bold">{t.name}</span>
+                      {t.language && (
+                        <span className="text-xs text-zinc-400">{t.language}</span>
+                      )}
+                    </div>
+                    {isSelected && <Check className="w-5 h-5 text-rose-400 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };

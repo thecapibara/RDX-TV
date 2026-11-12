@@ -1586,7 +1586,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                           </span>
                         </div>
                         <a
-                          href="https://github.com/thecapibara/RDX"
+                          href="https://github.com/thecapibara/RDX-TV"
                           target="_blank"
                           rel="noreferrer"
                           data-tv-focusable

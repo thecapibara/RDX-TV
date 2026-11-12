@@ -42,6 +42,7 @@ import {
   type AccentColor,
   type BgTheme,
 } from "../services/theme";
+import { focusFirstInScope, useTvBack } from "../hooks/useTvNavigation";
 
 interface MirrorModalProps {
   isOpen: boolean;
@@ -149,6 +150,16 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
   });
   const [accentColor, setAccentColorState] = useState<AccentColor>(() => getAccentColor());
   const [bgTheme, setBgThemeState] = useState<BgTheme>(() => getBgTheme());
+
+  useTvBack(isOpen, onClose);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => {
+      focusFirstInScope();
+    }, 50);
+    return () => clearTimeout(t);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -500,6 +511,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
       onClick={onClose}
       onWheel={(e) => e.stopPropagation()}
       data-modal-open="true"
+      data-tv-scope="modal"
       className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-hidden select-none"
     >
       <div
@@ -528,7 +540,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2.5 rounded-full bg-white/5 hover:bg-white/12 text-zinc-400 hover:text-white transition-all cursor-pointer border border-white/5 hover:border-white/15"
+            data-tv-focusable
+            className="p-2.5 rounded-full bg-white/5 hover:bg-white/12 text-zinc-400 hover:text-white transition-all cursor-pointer border border-white/5 hover:border-white/15 focus:outline-none focus:ring-4 focus:ring-rose-500"
             title="Закрити налаштування (Esc)"
           >
             <X className="w-4 h-4" />
@@ -538,12 +551,17 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
         {/* 2-Column TV Layout: Sidebar + Main Content */}
         <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
           {/* Left Navigation Rail */}
-          <div className="w-full md:w-60 border-b md:border-b-0 md:border-r border-[var(--border-subtle,rgba(255,255,255,0.08))] bg-[var(--bg-base,#101116)]/70 p-3 space-y-1.5 flex-shrink-0 flex md:flex-col overflow-x-auto md:overflow-x-visible transition-colors duration-250">
+          <div
+            data-tv-row="mirror-tabs"
+            className="w-full md:w-60 border-b md:border-b-0 md:border-r border-[var(--border-subtle,rgba(255,255,255,0.08))] bg-[var(--bg-base,#101116)]/70 p-3 space-y-1.5 flex-shrink-0 flex md:flex-col overflow-x-auto md:overflow-x-visible transition-colors duration-250"
+          >
             {/* Tab 1: Network & Mirrors */}
             <button
               onClick={() => setActiveModalTab("network")}
+              data-tv-focusable
+              data-tv-autofocus
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0",
+                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
                 activeModalTab === "network"
                   ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
@@ -569,8 +587,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
             {/* Tab 2: Playback */}
             <button
               onClick={() => setActiveModalTab("playback")}
+              data-tv-focusable
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0",
+                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
                 activeModalTab === "playback"
                   ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
@@ -596,8 +615,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
             {/* Tab 3: Appearance & Sound (NEW) */}
             <button
               onClick={() => setActiveModalTab("appearance")}
+              data-tv-focusable
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0",
+                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
                 activeModalTab === "appearance"
                   ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
@@ -623,8 +643,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
             {/* Tab 4: About & Shortcuts */}
             <button
               onClick={() => setActiveModalTab("about")}
+              data-tv-focusable
               className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0",
+                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
                 activeModalTab === "about"
                   ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
@@ -819,7 +840,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     role="switch"
                     aria-checked={mirrorAutopilot}
                     data-testid="mirror-autopilot-toggle"
-                    className="relative inline-flex items-center cursor-pointer flex-shrink-0"
+                    tabIndex={0}
+                    data-tv-focusable
+                    className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
                   >
                     <input
                       type="checkbox"
@@ -859,11 +882,12 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <div data-tv-row="mirror-rotator-actions" className="flex flex-wrap items-center gap-2 pt-1">
                     <button
                       onClick={() => handleSmartSelect(false)}
                       disabled={smartRotating || testing}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-95 text-white font-bold text-xs transition-all shadow-lg shadow-rose-950/40 cursor-pointer disabled:opacity-50"
+                      data-tv-focusable
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-95 text-white font-bold text-xs transition-all shadow-lg shadow-rose-950/40 cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       {smartRotating ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -876,7 +900,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     <button
                       onClick={() => handleSmartSelect(true)}
                       disabled={smartRotating || testing}
-                      className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-200 font-semibold text-xs border border-white/10 transition-all cursor-pointer disabled:opacity-50"
+                      data-tv-focusable
+                      className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-200 font-semibold text-xs border border-white/10 transition-all cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <Shuffle className="w-3.5 h-3.5 text-zinc-300" />
                       <span>Перемкнути на інше робоче</span>
@@ -885,7 +910,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     <button
                       onClick={handleOpenCaptcha}
                       disabled={captchaOpening}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-medium text-xs border border-white/10 transition-all cursor-pointer"
+                      data-tv-focusable
+                      className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-medium text-xs border border-white/10 transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
                       title="Відкрити вікно перевірки Cloudflare / Captcha"
                     >
                       <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
@@ -904,7 +930,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     <button
                       onClick={handleTestAll}
                       disabled={testing || smartRotating}
-                      className="flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 transition-colors font-medium cursor-pointer disabled:opacity-50"
+                      data-tv-focusable
+                      className="flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 transition-colors font-medium cursor-pointer disabled:opacity-50 rounded-lg px-2 py-1 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <RefreshCw
                         className={cn("w-3.5 h-3.5", (testing || smartRotating) && "animate-spin")}
@@ -923,9 +950,12 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                       return (
                         <div
                           key={url}
+                          tabIndex={0}
+                          role="button"
+                          data-tv-focusable
                           onClick={() => handleSelectMirror(url)}
                           className={cn(
-                            "flex items-center justify-between gap-2 px-4 py-3 rounded-2xl border transition-all cursor-pointer",
+                            "flex items-center justify-between gap-2 px-4 py-3 rounded-2xl border transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                             isActive
                               ? "bg-rose-950/20 border-rose-500/40 text-white shadow-lg shadow-rose-950/20"
                               : "bg-zinc-900/40 border-white/5 hover:border-white/15 text-zinc-300 hover:bg-zinc-900/70"
@@ -1024,7 +1054,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                                   e.stopPropagation();
                                   handleRemoveCustomMirror(url);
                                 }}
-                                className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                                data-tv-focusable
+                                className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                                 title="Видалити це дзеркало"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1036,7 +1067,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                                 e.stopPropagation();
                                 testMirror(url);
                               }}
-                              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer shrink-0"
+                              data-tv-focusable
+                              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                               title="Оновити пінґ"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
@@ -1048,18 +1080,20 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                   </div>
 
                   {/* Add Custom Mirror Input */}
-                  <div className="flex gap-2 pt-1">
+                  <div data-tv-row="mirror-custom-add" className="flex gap-2 pt-1">
                     <input
                       type="text"
                       value={customInput}
                       onChange={(e) => setCustomInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleAddCustomMirror()}
+                      data-tv-focusable
                       placeholder="https://нове-дзеркало.com"
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-rose-500 transition-colors"
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500 transition-colors"
                     />
                     <button
                       onClick={handleAddCustomMirror}
-                      className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs transition-colors cursor-pointer"
+                      data-tv-focusable
+                      className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Додати</span>
@@ -1075,18 +1109,20 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                       HTTP / SOCKS5 Проксі-сервер (Опціонально)
                     </h3>
                   </div>
-                  <div className="flex gap-2">
+                  <div data-tv-row="mirror-proxy" className="flex gap-2">
                     <input
                       type="text"
                       value={proxyInput}
                       onChange={(e) => setProxyInput(e.target.value)}
+                      data-tv-focusable
                       placeholder="socks5://127.0.0.1:9050 або http://user:pass@host:port"
-                      className="flex-1 px-4 py-2 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-rose-500"
+                      className="flex-1 px-4 py-2 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
                     />
                     <button
                       onClick={handleSaveProxy}
                       disabled={savingProxy}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors cursor-pointer disabled:opacity-50"
+                      data-tv-focusable
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       {savingProxy ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1117,7 +1153,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                  <div data-tv-row="mirror-quality" className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
                     {[
                       { key: "1080p Ultra", label: "1080p Ultra", vip: true },
                       { key: "1080p", label: "1080p" },
@@ -1130,8 +1166,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                         <button
                           key={q.key}
                           onClick={() => handleSelectDefaultQuality(q.key)}
+                          data-tv-focusable
                           className={cn(
-                            "flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer border",
+                            "flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer border focus:outline-none focus:ring-4 focus:ring-rose-500",
                             isSelected
                               ? "bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-950/50"
                               : "bg-zinc-950/80 border-white/5 text-zinc-300 hover:bg-zinc-900 hover:border-white/15"
@@ -1163,19 +1200,21 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     type="text"
                     value={preferredTranslator}
                     onChange={(e) => handleSaveTranslator(e.target.value)}
+                    data-tv-focusable
                     placeholder="Наприклад: Український, HDRezka Studio"
-                    className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-rose-500"
+                    className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
                   />
 
                   {/* Suggestion Chips */}
-                  <div className="flex items-center gap-2 flex-wrap text-xs pt-1">
+                  <div data-tv-row="mirror-translator-presets" className="flex items-center gap-2 flex-wrap text-xs pt-1">
                     <span className="text-zinc-500 text-[11px]">Швидкі пресети:</span>
                     {["Український", "HDRezka Studio", "Оригінал"].map((preset) => (
                       <button
                         key={preset}
                         onClick={() => handleSaveTranslator(preset)}
+                        data-tv-focusable
                         className={cn(
-                          "px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all cursor-pointer",
+                          "px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                           preferredTranslator === preset
                             ? "bg-rose-600/30 border-rose-500/50 text-rose-300"
                             : "bg-white/5 border-white/10 text-zinc-400 hover:text-white"
@@ -1207,7 +1246,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                       role="switch"
                       aria-checked={autoplayNext}
                       data-testid="autoplay-next-toggle"
-                      className="relative inline-flex items-center cursor-pointer flex-shrink-0"
+                      tabIndex={0}
+                      data-tv-focusable
+                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <input
                         type="checkbox"
@@ -1259,16 +1300,17 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
 
                   {/* Horizontal row of circular color swatches */}
                   <div className="pt-1">
-                    <div className="flex items-center gap-3.5 flex-wrap">
+                    <div data-tv-row="mirror-accent-colors" className="flex items-center gap-3.5 flex-wrap">
                       {ACCENT_OPTIONS.map((opt) => {
                         const isSelected = accentColor === opt.id;
                         return (
                           <button
                             key={opt.id}
                             onClick={() => handleSelectAccent(opt.id)}
+                            data-tv-focusable
                             className={cn(
                               "group relative w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer",
-                              "hover:scale-110 active:scale-95 focus:outline-none",
+                              "hover:scale-110 active:scale-95 focus:outline-none focus:ring-4 focus:ring-rose-500",
                               isSelected
                                 ? "ring-2 ring-white ring-offset-2 ring-offset-[#09090b] shadow-lg scale-105"
                                 : "opacity-80 hover:opacity-100 ring-1 ring-white/20"
@@ -1314,11 +1356,12 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div data-tv-row="mirror-bg-themes" className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                     <button
                       onClick={() => handleSelectBgTheme("oled")}
+                      data-tv-focusable
                       className={cn(
-                        "flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer",
+                        "flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                         bgTheme === "oled"
                           ? "bg-zinc-800/90 border-rose-500 shadow-[0_0_14px_rgba(225,29,72,0.25)] ring-1 ring-rose-500"
                           : "bg-black/30 border-white/8 hover:bg-white/5 hover:border-white/15"
@@ -1343,8 +1386,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
 
                     <button
                       onClick={() => handleSelectBgTheme("obsidian")}
+                      data-tv-focusable
                       className={cn(
-                        "flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer",
+                        "flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                         bgTheme === "obsidian"
                           ? "bg-zinc-800/90 border-rose-500 shadow-[0_0_14px_rgba(225,29,72,0.25)] ring-1 ring-rose-500"
                           : "bg-black/30 border-white/8 hover:bg-white/5 hover:border-white/15"
@@ -1382,7 +1426,11 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     </div>
 
                     {/* Toggle Switch */}
-                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <label
+                      tabIndex={0}
+                      data-tv-focusable
+                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
+                    >
                       <input
                         type="checkbox"
                         checked={startupSound}
@@ -1410,7 +1458,11 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     </div>
 
                     {/* Toggle Switch */}
-                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <label
+                      tabIndex={0}
+                      data-tv-focusable
+                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
+                    >
                       <input
                         type="checkbox"
                         checked={uiSounds}
@@ -1437,7 +1489,11 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                       </div>
                     </div>
 
-                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <label
+                      tabIndex={0}
+                      data-tv-focusable
+                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
+                    >
                       <input
                         type="checkbox"
                         checked={ambientGlow}
@@ -1464,7 +1520,11 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                       </div>
                     </div>
 
-                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <label
+                      tabIndex={0}
+                      data-tv-focusable
+                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
+                    >
                       <input
                         type="checkbox"
                         checked={motion60fps}
@@ -1514,7 +1574,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                           href="https://github.com/thecapibara/RDX"
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-semibold text-xs border border-rose-500/30 transition-colors"
+                          data-tv-focusable
+                          className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-semibold text-xs border border-rose-500/30 transition-colors focus:outline-none focus:ring-4 focus:ring-rose-500"
                         >
                           <Globe className="w-3.5 h-3.5" />
                           <span>GitHub Репозиторій</span>
@@ -1542,7 +1603,8 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     <button
                       onClick={handleManualUpdateCheck}
                       disabled={isCheckingUpdates}
-                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-semibold text-xs border border-rose-500/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50 shrink-0"
+                      data-tv-focusable
+                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-semibold text-xs border border-rose-500/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50 shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       {isCheckingUpdates ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />

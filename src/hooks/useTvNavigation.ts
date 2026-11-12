@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { playHoverSound } from "../services/sound";
+import { playHoverSound, playButtonClickSound, playBackSound } from "../services/sound";
 
 export const TV_BACK_EVENT = "rdx-tv-back";
 
@@ -146,6 +146,7 @@ export function useTvNavigation(disabled: boolean = false) {
 
       if (isBackKey) {
         e.preventDefault();
+        playBackSound();
         window.dispatchEvent(new CustomEvent(TV_BACK_EVENT));
         return;
       }
@@ -195,6 +196,7 @@ export function useTvNavigation(disabled: boolean = false) {
           const tag = active.tagName.toLowerCase();
           if (tag !== "button" && tag !== "a") {
             e.preventDefault();
+            playButtonClickSound();
             active.click();
           }
         }

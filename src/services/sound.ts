@@ -4,12 +4,12 @@
  * Zero native dependency, zero latency, and rate-limiting against rapid cursor sweeps.
  */
 
-// Initialize state from localStorage (default: false, OFF by default)
+// Initialize state from localStorage (default: true on TV, ON by default unless explicitly disabled)
 let uiSoundsEnabled: boolean = (() => {
   try {
-    return localStorage.getItem("rdx_ui_sounds") === "true";
+    return localStorage.getItem("rdx_ui_sounds") !== "false";
   } catch {
-    return false;
+    return true;
   }
 })();
 
@@ -61,7 +61,7 @@ export const suppressHoverSound = (cooldownMs: number = 400) => {
 export const playHoverSound = () => {
   if (!uiSoundsEnabled) return;
   const now = performance.now();
-  if (now < lastHoverSoundTime || now - lastHoverSoundTime < 110) return;
+  if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
   try {
@@ -155,6 +155,38 @@ export const playButtonClickSound = () => {
 
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.linearRampToValueAtTime(0.09, t + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(t);
+    osc.stop(t + dur + 0.01);
+  } catch {}
+};
+
+/**
+ * Soft downward tick/whoosh when pressing Back on the TV remote
+ */
+export const playBackSound = () => {
+  if (!uiSoundsEnabled) return;
+
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const dur = 0.055;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(340, t);
+    osc.frequency.exponentialRampToValueAtTime(140, t + dur);
+
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.004);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
     osc.connect(gain);

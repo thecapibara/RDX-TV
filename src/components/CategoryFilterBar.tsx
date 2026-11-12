@@ -6,6 +6,7 @@ import {
 } from "../constants/genres";
 import { cn } from "../lib/utils";
 import { playButtonClickSound } from "../services/sound";
+import { focusFirstInScope, useTvBack } from "../hooks/useTvNavigation";
 
 interface CategoryFilterBarProps {
   category: string; // "films" | "series" | "cartoons" | "animation"
@@ -27,6 +28,15 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const availableGenres = CATEGORY_GENRES[category] || [];
+
+  useTvBack(isGenreDropdownOpen, () => setIsGenreDropdownOpen(false));
+
+  useEffect(() => {
+    if (isGenreDropdownOpen) {
+      const t = setTimeout(() => focusFirstInScope(), 30);
+      return () => clearTimeout(t);
+    }
+  }, [isGenreDropdownOpen]);
 
   // Close dropdown on outside click or Escape
   useEffect(() => {
@@ -70,18 +80,19 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
   return (
     <div className="w-full space-y-4 pt-1 pb-3 select-none">
       {/* 1. Sort Filter Pills (Останні надходження / Популярні / Зараз дивляться / В очікуванні) */}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+      <div data-tv-row="category-sort" className="flex flex-wrap items-center gap-2 sm:gap-2.5">
         {SORT_FILTERS.map((filter) => {
           const isActive = activeSort === filter.id;
           return (
             <button
               key={filter.id}
+              data-tv-focusable
               onClick={() => {
                 playButtonClickSound();
                 onSortChange(filter.id);
               }}
               className={cn(
-                "px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer",
+                "px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                 isActive
                   ? "bg-rose-600 text-white shadow-lg shadow-rose-950/60 border border-rose-500"
                   : "bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10"
@@ -95,15 +106,16 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
 
       {/* 2. Genre Chips & Full Dropdown */}
       {availableGenres.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        <div data-tv-row="category-genres" className="flex flex-wrap items-center gap-2 pt-0.5">
           {/* "Всі жанри" / "Всі новинки" Chip */}
           <button
+            data-tv-focusable
             onClick={() => {
               playButtonClickSound();
               onGenreChange(null);
             }}
             className={cn(
-              "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+              "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
               activeGenre === null
                 ? "bg-white text-zinc-950 font-bold shadow-sm"
                 : "bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10"
@@ -118,12 +130,13 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
             return (
               <button
                 key={g.id}
+                data-tv-focusable
                 onClick={() => {
                   playButtonClickSound();
                   onGenreChange(isActive ? null : g.id);
                 }}
                 className={cn(
-                  "px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer",
+                  "px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                   isActive
                     ? "bg-rose-500/20 text-rose-300 border border-rose-500/50 font-semibold"
                     : "bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/5"
@@ -138,12 +151,13 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
           {availableGenres.length > quickGenres.length && (
             <div ref={dropdownRef} className="relative">
               <button
+                data-tv-focusable
                 onClick={() => {
                   playButtonClickSound();
                   setIsGenreDropdownOpen((prev) => !prev);
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer",
+                  "flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                   activeGenre && !quickGenres.some((g) => g.id === activeGenre)
                     ? "bg-rose-600/30 text-rose-200 border-rose-500/60 font-semibold"
                     : "bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border-white/10"
@@ -165,7 +179,10 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
 
               {/* Dropdown Popover */}
             {isGenreDropdownOpen && (
-              <div className="absolute left-0 mt-2 w-72 sm:w-80 max-h-96 overflow-hidden bg-zinc-950/95 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 flex flex-col space-y-2 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+              <div
+                data-tv-scope="modal"
+                className="absolute left-0 mt-2 w-72 sm:w-80 max-h-96 overflow-hidden bg-zinc-950/95 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 flex flex-col space-y-2 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+              >
                 {/* Search input inside dropdown */}
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
@@ -174,13 +191,16 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
                     type="text"
                     value={genreSearch}
                     onChange={(e) => setGenreSearch(e.target.value)}
+                    data-tv-focusable
+                    data-tv-autofocus
                     placeholder="Пошук жанру..."
-                    className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+                    className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
                   />
                   {genreSearch && (
                     <button
+                      data-tv-focusable
                       onClick={() => setGenreSearch("")}
-                      className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-white"
+                      className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-white rounded focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -191,6 +211,7 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
                 <div className="overflow-y-auto max-h-72 space-y-0.5 pr-1 divide-y divide-white/5 no-scrollbar">
                   {/* Reset to all */}
                   <button
+                    data-tv-focusable
                     onClick={() => {
                       playButtonClickSound();
                       onGenreChange(null);
@@ -198,7 +219,7 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
                       setGenreSearch("");
                     }}
                     className={cn(
-                      "w-full px-3 py-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between cursor-pointer",
+                      "w-full px-3 py-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                       activeGenre === null
                         ? "bg-rose-600/20 text-rose-300 font-semibold"
                         : "text-zinc-300 hover:bg-white/5"
@@ -213,6 +234,7 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
                     return (
                       <button
                         key={g.id}
+                        data-tv-focusable
                         onClick={() => {
                           playButtonClickSound();
                           onGenreChange(g.id);
@@ -220,7 +242,7 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
                           setGenreSearch("");
                         }}
                         className={cn(
-                          "w-full px-3 py-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between cursor-pointer",
+                          "w-full px-3 py-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                           isSelected
                             ? "bg-rose-600 text-white font-semibold"
                             : "text-zinc-300 hover:bg-white/5"
@@ -240,11 +262,12 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
           {/* Clear active genre pill if chosen */}
           {activeGenre && (
             <button
+              data-tv-focusable
               onClick={() => {
                 playButtonClickSound();
                 onGenreChange(null);
               }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
             >
               <span>{activeGenreLabel}</span>
               <X className="w-3 h-3" />

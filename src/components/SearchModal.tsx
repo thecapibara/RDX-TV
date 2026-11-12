@@ -3,6 +3,7 @@ import { Search, X, Loader2 } from "lucide-react";
 import type { MediaCard } from "../types";
 import { api } from "../services/api";
 import { MediaCard as MediaCardComponent } from "./MediaCard";
+import { focusFirstInScope, useTvBack } from "../hooks/useTvNavigation";
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -20,9 +21,14 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useTvBack(isOpen, onClose);
+
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      const t = setTimeout(() => {
+        focusFirstInScope();
+      }, 50);
+      return () => clearTimeout(t);
     } else {
       setQuery("");
       setResults([]);
@@ -91,11 +97,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     <div
       onClick={onClose}
       data-modal-open="true"
+      data-tv-scope="modal"
       className="fixed inset-0 z-50 bg-[var(--bg-base,#000000)]/98 flex flex-col overflow-y-auto select-none backdrop-blur-md transition-colors duration-250"
     >
       {/* Top Search Input Bar */}
       <div
         onClick={(e) => e.stopPropagation()}
+        data-tv-row="search-header"
         className="sticky top-0 z-20 w-full bg-[var(--bg-base,#000000)]/90 border-b border-white/10 px-[clamp(1.5rem,5vw,5rem)] py-6 flex items-center justify-between gap-6 backdrop-blur-md transition-colors duration-250"
       >
         <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -106,8 +114,10 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
+            data-tv-focusable
+            data-tv-autofocus
             placeholder="Введіть назву фільму або серіалу..."
-            className="w-full bg-transparent text-xl sm:text-2xl font-bold text-white placeholder-zinc-500 focus:outline-none"
+            className="w-full bg-transparent text-xl sm:text-2xl font-bold text-white placeholder-zinc-500 rounded-xl px-2 py-1 focus:outline-none focus:ring-4 focus:ring-rose-500"
           />
         </div>
 
@@ -116,14 +126,16 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           {query && !loading && (
             <button
               onClick={() => setQuery("")}
-              className="p-2 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+              data-tv-focusable
+              className="p-2 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
             >
               <X className="w-5 h-5" />
             </button>
           )}
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-white/5 hover:bg-white/15 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+            data-tv-focusable
+            className="p-2 rounded-full bg-white/5 hover:bg-white/15 text-zinc-300 hover:text-white transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
           >
             <X className="w-6 h-6" />
           </button>

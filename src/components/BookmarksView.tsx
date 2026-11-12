@@ -62,16 +62,17 @@ export const BookmarksView: React.FC<BookmarksViewProps> = ({
         </div>
 
         {/* Categories */}
-        <div className="flex gap-1.5 p-1 bg-zinc-900 rounded-2xl border border-white/5">
+        <div data-tv-row="bookmarks-categories" className="flex gap-1.5 p-1 bg-zinc-900 rounded-2xl border border-white/5">
           {categories.map((cat) => (
             <button
               key={cat.id}
+              data-tv-focusable
               onClick={() => {
                 playButtonClickSound();
                 setActiveCategory(cat.id);
               }}
               className={cn(
-                "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer",
+                "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                 activeCategory === cat.id
                   ? "bg-rose-600 text-white shadow-md shadow-rose-950/50"
                   : "text-zinc-400 hover:text-white hover:bg-white/5"

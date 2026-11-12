@@ -259,6 +259,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [showEpisodesDrawer, setShowEpisodesDrawer] = useState(false);
   const [drawerSeason, setDrawerSeason] = useState<number>(activeSeason || 1);
   const hideControlsTimer = useRef<NodeJS.Timeout | null>(null);
+  const osdRef = useRef<HTMLDivElement>(null);
+  const playPauseBtnRef = useRef<HTMLButtonElement>(null);
+  const episodesDrawerRef = useRef<HTMLDivElement>(null);
+  const translatorMenuRef = useRef<HTMLDivElement>(null);
+  const speedMenuRef = useRef<HTMLDivElement>(null);
+  const qualityMenuRef = useRef<HTMLDivElement>(null);
+  const subtitleMenuRef = useRef<HTMLDivElement>(null);
+  const lastMenuTriggerRef = useRef<HTMLElement | null>(null);
 
   // Self-healing seasons and episodes state (matches current translator)
   const [seasons, setSeasons] = useState<SeasonTab[]>(details.seasons || []);
@@ -1596,7 +1604,93 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Keyboard navigation & Shortcuts (ArrowLeft/Right = ±5s, ArrowUp/Down = volume)
+  const moveFocusInContainer = useCallback(
+    (container: HTMLElement | null, dir: "left" | "right" | "up" | "down") => {
+      if (!container) return;
+      const all = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-tv-focusable]")
+      ).filter((el) => {
+        if ((el as HTMLButtonElement).disabled) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+      if (all.length === 0) return;
+
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !all.includes(active)) {
+        all[0].focus();
+        all[0].scrollIntoView({ block: "nearest", inline: "nearest" });
+        return;
+      }
+
+      const cur = active.getBoundingClientRect();
+      const curCx = cur.left + cur.width / 2;
+      const curCy = cur.top + cur.height / 2;
+
+      let best: HTMLElement | null = null;
+      let bestScore = Infinity;
+
+      for (const el of all) {
+        if (el === active) continue;
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const dx = cx - curCx;
+        const dy = cy - curCy;
+
+        if (dir === "right" && dx <= 2) continue;
+        if (dir === "left" && dx >= -2) continue;
+        if (dir === "down" && dy <= 2) continue;
+        if (dir === "up" && dy >= -2) continue;
+
+        const score =
+          dir === "left" || dir === "right"
+            ? Math.abs(dx) + Math.abs(dy) * 2.5
+            : Math.abs(dy) + Math.abs(dx) * 2.5;
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = el;
+        }
+      }
+
+      if (best) {
+        best.focus();
+        best.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    },
+    []
+  );
+
+  // Auto-focus first item when an OSD submenu/drawer opens
+  useEffect(() => {
+    const activeContainer = showEpisodesDrawer
+      ? episodesDrawerRef.current
+      : showTranslatorMenu
+      ? translatorMenuRef.current
+      : showSpeedMenu
+      ? speedMenuRef.current
+      : showQualityMenu
+      ? qualityMenuRef.current
+      : showSubtitleMenu
+      ? subtitleMenuRef.current
+      : null;
+
+    if (!activeContainer) return;
+    const raf = requestAnimationFrame(() => {
+      const first = activeContainer.querySelector<HTMLElement>("[data-tv-focusable]");
+      first?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [
+    showEpisodesDrawer,
+    showTranslatorMenu,
+    showSpeedMenu,
+    showQualityMenu,
+    showSubtitleMenu,
+  ]);
+
+  // Keyboard & TV Remote navigation / Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
@@ -1614,33 +1708,171 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
 
+      const code = e.code;
+      const key = (e.key || "").toLowerCase();
+      const keyCode = e.keyCode;
+
+      const isBackKey =
+        code === "Escape" ||
+        key === "escape" ||
+        key === "xf86back" ||
+        key === "goback" ||
+        code === "GoBack" ||
+        code === "BrowserBack" ||
+        keyCode === 10009 ||
+        code === "Backspace" ||
+        key === "backspace";
+
+      if (isBackKey) {
+        e.preventDefault();
+        if (contextMenu?.open) {
+          if (contextMenu.page !== "main") {
+            setContextMenu({ ...contextMenu, page: "main" });
+          } else {
+            setContextMenu(null);
+          }
+        } else if (showMediaInfo) {
+          setShowMediaInfo(false);
+        } else if (showEpisodesDrawer) {
+          setShowEpisodesDrawer(false);
+          requestAnimationFrame(() => {
+            (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+          });
+        } else if (showQualityMenu || showTranslatorMenu || showSubtitleMenu || showSpeedMenu) {
+          setShowQualityMenu(false);
+          setShowTranslatorMenu(false);
+          setShowSubtitleMenu(false);
+          setShowSpeedMenu(false);
+          requestAnimationFrame(() => {
+            (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+          });
+        } else if (showControls && mode === "full") {
+          setShowControls(false);
+          if (osdRef.current?.contains(document.activeElement)) {
+            (document.activeElement as HTMLElement)?.blur();
+          }
+        } else if (mode === "full" && (isFullscreen || (typeof document !== "undefined" && Boolean(document.fullscreenElement)))) {
+          toggleFullscreen(false);
+        } else if (mode === "os_pip") {
+          handleSetOsPip(false);
+        } else if (mode === "docked") {
+          const isPlayerFocused = containerRef.current?.contains(document.activeElement);
+          if (isPlayerFocused) {
+            handleTeardownAndClose();
+          }
+        } else {
+          handleTeardownAndClose();
+        }
+        return;
+      }
+
       if (isMiniMode) {
         handleMiniMouseMove();
       } else {
         triggerActivity();
       }
 
-      const code = e.code;
-      const key = (e.key || "").toLowerCase();
-
-      // Play / Pause (Space, K)
-      if (code === "Space" || code === "KeyK" || key === " " || key === "k" || key === "л") {
+      // Play / Pause (MediaPlayPause, Space, K)
+      if (
+        code === "MediaPlayPause" ||
+        key === "mediaplaypause" ||
+        keyCode === 179 ||
+        code === "Space" ||
+        code === "KeyK" ||
+        key === " " ||
+        key === "k" ||
+        key === "л"
+      ) {
         e.preventDefault();
         togglePlay();
         return;
       }
 
-      // Seek backward (ArrowLeft)
-      if (code === "ArrowLeft" || key === "arrowleft") {
-        e.preventDefault();
-        seekDelta(e.shiftKey ? -30 : -5);
+      // Enter / OK
+      const isEnterKey =
+        code === "Enter" ||
+        code === "NumpadEnter" ||
+        key === "enter" ||
+        key === "select" ||
+        keyCode === 13 ||
+        keyCode === 23;
+
+      if (isEnterKey && !isMiniMode) {
+        if (!showControls) {
+          e.preventDefault();
+          requestAnimationFrame(() => playPauseBtnRef.current?.focus());
+          return;
+        }
+        const activeTvEl = (activeEl as HTMLElement | null)?.closest?.(
+          "[data-tv-focusable]"
+        ) as HTMLElement | null;
+        if (!activeTvEl || !containerRef.current?.contains(activeTvEl)) {
+          e.preventDefault();
+          playPauseBtnRef.current?.focus();
+          return;
+        }
+        if (key === "select" || keyCode === 23) {
+          e.preventDefault();
+          activeTvEl.click();
+          return;
+        }
         return;
       }
 
-      // Seek forward (ArrowRight)
-      if (code === "ArrowRight" || key === "arrowright") {
+      // D-pad / Arrow keys: navigate OSD or open submenu when focused, otherwise seek / volume
+      const arrowDir: "left" | "right" | "up" | "down" | null =
+        code === "ArrowLeft" || key === "arrowleft"
+          ? "left"
+          : code === "ArrowRight" || key === "arrowright"
+          ? "right"
+          : code === "ArrowUp" || key === "arrowup"
+          ? "up"
+          : code === "ArrowDown" || key === "arrowdown"
+          ? "down"
+          : null;
+
+      if (arrowDir) {
+        const activeSubmenuContainer = showEpisodesDrawer
+          ? episodesDrawerRef.current
+          : showTranslatorMenu
+          ? translatorMenuRef.current
+          : showSpeedMenu
+          ? speedMenuRef.current
+          : showQualityMenu
+          ? qualityMenuRef.current
+          : showSubtitleMenu
+          ? subtitleMenuRef.current
+          : null;
+
+        if (activeSubmenuContainer) {
+          e.preventDefault();
+          moveFocusInContainer(activeSubmenuContainer, arrowDir);
+          return;
+        }
+
+        const activeTvEl = (activeEl as HTMLElement | null)?.closest?.(
+          "[data-tv-focusable]"
+        ) as HTMLElement | null;
+        const isFocusInOsd = Boolean(
+          activeTvEl && containerRef.current?.contains(activeTvEl)
+        );
+
+        if (showControls && isFocusInOsd && !isMiniMode) {
+          e.preventDefault();
+          moveFocusInContainer(osdRef.current, arrowDir);
+          return;
+        }
+
         e.preventDefault();
-        seekDelta(e.shiftKey ? 30 : 5);
+        if (arrowDir === "left") {
+          seekDelta(e.shiftKey ? -30 : -10);
+        } else if (arrowDir === "right") {
+          seekDelta(e.shiftKey ? 30 : 10);
+        } else if (arrowDir === "up") {
+          adjustVolume(0.05);
+        } else if (arrowDir === "down") {
+          adjustVolume(-0.05);
+        }
         return;
       }
 
@@ -1665,20 +1897,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
 
-      // Volume Up (ArrowUp)
-      if (code === "ArrowUp" || key === "arrowup") {
-        e.preventDefault();
-        adjustVolume(0.05);
-        return;
-      }
-
-      // Volume Down (ArrowDown)
-      if (code === "ArrowDown" || key === "arrowdown") {
-        e.preventDefault();
-        adjustVolume(-0.05);
-        return;
-      }
-
       // Mute (M)
       if (code === "KeyM" || key === "m" || key === "ь") {
         e.preventDefault();
@@ -1699,39 +1917,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
         return;
       }
-
-      // Escape
-      if (code === "Escape" || key === "escape") {
-        e.preventDefault();
-        if (contextMenu?.open) {
-          if (contextMenu.page !== "main") {
-            setContextMenu({ ...contextMenu, page: "main" });
-          } else {
-            setContextMenu(null);
-          }
-        } else if (showMediaInfo) {
-          setShowMediaInfo(false);
-        } else if (showEpisodesDrawer) {
-          setShowEpisodesDrawer(false);
-        } else if (showQualityMenu || showTranslatorMenu || showSubtitleMenu || showSpeedMenu) {
-          setShowQualityMenu(false);
-          setShowTranslatorMenu(false);
-          setShowSubtitleMenu(false);
-          setShowSpeedMenu(false);
-        } else if (mode === "full" && (isFullscreen || (typeof document !== "undefined" && Boolean(document.fullscreenElement)))) {
-          toggleFullscreen(false);
-        } else if (mode === "os_pip") {
-          handleSetOsPip(false);
-        } else if (mode === "docked") {
-          const isPlayerFocused = containerRef.current?.contains(document.activeElement);
-          if (isPlayerFocused) {
-            handleTeardownAndClose();
-          }
-        } else {
-          handleTeardownAndClose();
-        }
-        return;
-      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1739,10 +1924,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [
     isPlaying,
     mode,
+    isMiniMode,
     volume,
     isMuted,
     isFullscreen,
     toggleFullscreen,
+    showControls,
     showEpisodesDrawer,
     showQualityMenu,
     showTranslatorMenu,
@@ -1755,6 +1942,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     details.title,
     handleTeardownAndClose,
     onModeChange,
+    moveFocusInContainer,
   ]);
 
   // Single click vs Double click on video
@@ -2529,6 +2717,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {/* In-Player Season & Episode Drawer Overlay */}
             {showEpisodesDrawer && isSeries && (
               <div
+                ref={episodesDrawerRef}
                 onClick={(e) => e.stopPropagation()}
                 className="absolute bottom-24 left-1/2 transform -translate-x-1/2 w-[92%] max-w-2xl bg-zinc-900/95 border border-white/20 rounded-3xl p-5 shadow-2xl z-50 space-y-4 max-h-[70vh] flex flex-col"
               >
@@ -2538,8 +2727,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     <span>Вибір серії ({details.title})</span>
                   </div>
                   <button
-                    onClick={() => setShowEpisodesDrawer(false)}
-                    className="p-1 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white cursor-pointer"
+                    data-tv-focusable
+                    onClick={() => {
+                      setShowEpisodesDrawer(false);
+                      requestAnimationFrame(() => {
+                        (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+                      });
+                    }}
+                    className="p-1 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -2554,9 +2749,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       return (
                         <button
                           key={s.id}
+                          data-tv-focusable
                           onClick={() => setDrawerSeason(sNum)}
                           className={cn(
-                            "px-4 py-1.5 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer",
+                            "px-4 py-1.5 rounded-xl text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                             isCurrent
                               ? "bg-white text-zinc-950 shadow-md font-extrabold"
                               : "bg-zinc-800 text-zinc-400 hover:text-white border border-white/10"
@@ -2585,14 +2781,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     return (
                       <button
                         key={`${ep.season_id}-${ep.episode_id}`}
+                        data-tv-focusable
                         onClick={() => {
                           if (onEpisodeChange) {
                             onEpisodeChange(drawerSeason, epNum);
                           }
                           setShowEpisodesDrawer(false);
+                          requestAnimationFrame(() => {
+                            (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+                          });
                         }}
                         className={cn(
-                          "relative overflow-hidden flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition-all cursor-pointer group",
+                          "relative overflow-hidden flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition-all cursor-pointer group focus:outline-none focus:ring-4 focus:ring-rose-500",
                           isPlayingEp
                             ? "bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-950/60"
                             : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 border-white/10"
@@ -2706,6 +2906,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             {/* OSD CONTROLS OVERLAY */}
             <div
+              ref={osdRef}
               className={cn(
                 "absolute inset-0 flex flex-col justify-between p-6 sm:p-10 transition-opacity duration-300 pointer-events-none z-30",
                 showControls ? "opacity-100" : "opacity-0"
@@ -2760,10 +2961,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   {/* Settings Menu Gear Button */}
                   <button
                     ref={settingsBtnRef}
+                    data-tv-focusable
                     onClick={handleToggleSettingsMenu}
                     title="Налаштування плеєра"
                     className={cn(
-                      "h-10 w-10 rounded-xl border border-white/15 transition-all cursor-pointer flex items-center justify-center flex-shrink-0",
+                      "h-10 w-10 rounded-xl border border-white/15 transition-all cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
                       contextMenu?.open
                         ? "bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-950/50"
                         : "bg-zinc-900/90 hover:bg-zinc-800 text-white"
@@ -2774,18 +2976,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
                   {/* Always-on-Top OS PiP Window (Matching square icon button) */}
                   <button
+                    data-tv-focusable
                     onClick={() => handleSetOsPip(true)}
                     title="Перейти в режим поверх усіх вікон (Always-on-Top)"
-                    className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-all cursor-pointer flex items-center justify-center flex-shrink-0"
+                    className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-all cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                   >
                     <PictureInPicture2 className="w-4 h-4" />
                   </button>
 
                   {/* Close */}
                   <button
+                    data-tv-focusable
                     onClick={handleTeardownAndClose}
                     title="Закрити плеєр"
-                    className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-rose-600 text-white border border-white/15 transition-all cursor-pointer flex items-center justify-center flex-shrink-0"
+                    className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-rose-600 text-white border border-white/15 transition-all cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -2934,8 +3138,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   {/* Left Controls: Play/Pause, Prev/Next Ep, Seek ±5s, Volume */}
                   <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                     <button
+                      ref={playPauseBtnRef}
+                      data-tv-focusable
                       onClick={togglePlay}
-                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white flex items-center justify-center shadow-lg shadow-rose-950/60 transition-all cursor-pointer flex-shrink-0"
+                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white flex items-center justify-center shadow-lg shadow-rose-950/60 transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       {isPlaying ? (
                         <Pause className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -2947,9 +3153,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {/* Prev Episode Button (Series only) */}
                     {isSeries && (
                       <button
+                        data-tv-focusable
                         onClick={handlePrevEpisode}
                         title="Попередня серія"
-                        className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center flex-shrink-0"
+                        className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                       >
                         <SkipBack className="w-4 h-4" />
                       </button>
@@ -2957,9 +3164,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
                     {/* -5s Seek */}
                     <button
+                      data-tv-focusable
                       onClick={() => seekDelta(-5)}
                       title="Назад на 5 сек (←)"
-                      className="h-10 px-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center gap-1 flex-shrink-0"
+                      className="h-10 px-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center gap-1 flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <Rewind className="w-4 h-4 fill-current/30" />
                       <span className="text-[11px] font-bold">5s</span>
@@ -2967,9 +3175,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
                     {/* +5s Seek */}
                     <button
+                      data-tv-focusable
                       onClick={() => seekDelta(5)}
                       title="Вперед на 5 сек (→)"
-                      className="h-10 px-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center gap-1 flex-shrink-0"
+                      className="h-10 px-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center gap-1 flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <FastForward className="w-4 h-4 fill-current/30" />
                       <span className="text-[11px] font-bold">5s</span>
@@ -2978,9 +3187,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {/* Next Episode Button (Series only) */}
                     {isSeries && (
                       <button
+                        data-tv-focusable
                         onClick={handleNextEpisode}
                         title="Наступна серія"
-                        className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center flex-shrink-0"
+                        className="h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 transition-colors cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                       >
                         <SkipForward className="w-4 h-4" />
                       </button>
@@ -2989,9 +3199,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {/* Volume Slider integrated in cohesive h-10 dark glass capsule */}
                     <div className="h-10 px-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800/80 border border-white/15 flex items-center gap-2 cursor-pointer flex-shrink-0 transition-colors">
                       <button
+                        data-tv-focusable
                         onClick={toggleMute}
                         title="Без звуку (M)"
-                        className="text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
+                        className="text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center rounded-lg focus:outline-none focus:ring-4 focus:ring-rose-500"
                       >
                         {isMuted || volume === 0 ? (
                           <VolumeX className="w-4 h-4" />
@@ -3023,19 +3234,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   <div className="flex items-center gap-1 sm:gap-1.5 relative flex-shrink-0">
                     {/* Screenshot Frame Button (S) - desktop only */}
                     <button
+                      data-tv-focusable
                       onClick={handleScreenshot}
                       title="Зробити знімок кадру (S)"
-                      className="hidden lg:flex h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 cursor-pointer items-center justify-center flex-shrink-0"
+                      className="hidden lg:flex h-10 w-10 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 cursor-pointer items-center justify-center flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       <Camera className="w-4 h-4" />
                     </button>
 
                     {/* Stream Info Overlay Button (I) - desktop only */}
                     <button
+                      data-tv-focusable
                       onClick={() => setShowMediaInfo(!showMediaInfo)}
                       title="Статистика потоку (I)"
                       className={cn(
-                        "hidden lg:flex h-10 w-10 rounded-xl border border-white/15 transition-colors cursor-pointer items-center justify-center flex-shrink-0",
+                        "hidden lg:flex h-10 w-10 rounded-xl border border-white/15 transition-colors cursor-pointer items-center justify-center flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
                         showMediaInfo
                           ? "bg-rose-600 border-rose-500 text-white"
                           : "bg-zinc-900/90 hover:bg-zinc-800 text-white"
@@ -3047,14 +3260,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {/* Compact In-Player Season & Episode Selector */}
                     {isSeries && (
                       <button
-                        onClick={() => {
+                        data-tv-focusable
+                        onClick={(e) => {
+                          lastMenuTriggerRef.current = e.currentTarget;
                           setShowEpisodesDrawer(!showEpisodesDrawer);
                           setShowQualityMenu(false);
                           setShowTranslatorMenu(false);
                           setShowSubtitleMenu(false);
                           setShowSpeedMenu(false);
                         }}
-                        className="h-10 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 text-white text-xs font-semibold border border-rose-500/40 cursor-pointer shadow-md transition-all flex-shrink-0"
+                        className="h-10 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 text-white text-xs font-semibold border border-rose-500/40 cursor-pointer shadow-md transition-all flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                         title="Вибір сезону та серії"
                       >
                         <ListVideo className="w-4 h-4 text-rose-400 flex-shrink-0" />
@@ -3068,14 +3283,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {details.translators.length > 1 && (
                       <div className="relative">
                         <button
-                          onClick={() => {
+                          data-tv-focusable
+                          onClick={(e) => {
+                            lastMenuTriggerRef.current = e.currentTarget;
                             setShowTranslatorMenu(!showTranslatorMenu);
                             setShowQualityMenu(false);
                             setShowSubtitleMenu(false);
                             setShowSpeedMenu(false);
                             setShowEpisodesDrawer(false);
                           }}
-                          className="h-10 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white text-xs font-semibold border border-white/15 cursor-pointer shadow-md transition-all flex-shrink-0"
+                          className="h-10 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white text-xs font-semibold border border-white/15 cursor-pointer shadow-md transition-all flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                           title="Вибір озвучення"
                         >
                           <Tv className="w-4 h-4 text-rose-400 flex-shrink-0" />
@@ -3090,7 +3307,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         </button>
 
                         {showTranslatorMenu && (
-                          <div className="absolute bottom-12 right-0 w-64 max-h-72 overflow-y-auto bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2 space-y-1 z-50">
+                          <div
+                            ref={translatorMenuRef}
+                            className="absolute bottom-12 right-0 w-64 max-h-72 overflow-y-auto bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2 space-y-1 z-50"
+                          >
                             <div className="text-[11px] font-bold text-zinc-400 px-2 py-1 uppercase">
                               Вибір озвучення
                             </div>
@@ -3103,12 +3323,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                               return (
                                 <button
                                   key={t.id}
+                                  data-tv-focusable
                                   onClick={() => {
                                     if (onTranslatorChange) onTranslatorChange(t.id);
                                     setShowTranslatorMenu(false);
+                                    requestAnimationFrame(() => {
+                                      (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+                                    });
                                   }}
                                   className={cn(
-                                    "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer",
+                                    "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                                     isSelected
                                       ? "bg-rose-600 text-white"
                                       : "text-zinc-300 hover:bg-white/10"
@@ -3136,14 +3360,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {/* Playback Speed Trigger */}
                     <div className="relative">
                       <button
-                        onClick={() => {
+                        data-tv-focusable
+                        onClick={(e) => {
+                          lastMenuTriggerRef.current = e.currentTarget;
                           setShowSpeedMenu(!showSpeedMenu);
                           setShowQualityMenu(false);
                           setShowTranslatorMenu(false);
                           setShowSubtitleMenu(false);
                           setShowEpisodesDrawer(false);
                         }}
-                        className="h-10 flex items-center gap-1 px-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white text-xs font-semibold border border-white/15 cursor-pointer flex-shrink-0"
+                        className="h-10 flex items-center gap-1 px-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white text-xs font-semibold border border-white/15 cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                         title="Швидкість відтворення"
                       >
                         <Gauge className="w-4 h-4" />
@@ -3151,16 +3377,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       </button>
 
                       {showSpeedMenu && (
-                        <div className="absolute bottom-12 right-0 w-32 bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2 space-y-1 z-50">
+                        <div
+                          ref={speedMenuRef}
+                          className="absolute bottom-12 right-0 w-32 bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2 space-y-1 z-50"
+                        >
                           <div className="text-[11px] font-bold text-zinc-400 px-2 py-1 uppercase">
                             Швидкість
                           </div>
                           {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => (
                             <button
                               key={s}
-                              onClick={() => handleSelectSpeed(s)}
+                              data-tv-focusable
+                              onClick={() => {
+                                handleSelectSpeed(s);
+                                requestAnimationFrame(() => {
+                                  (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+                                });
+                              }}
                               className={cn(
-                                "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer",
+                                "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                                 playbackSpeed === s
                                   ? "bg-rose-600 text-white"
                                   : "text-zinc-300 hover:bg-white/10"
@@ -3177,14 +3412,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {/* Quality Menu Trigger */}
                     <div className="relative">
                       <button
-                        onClick={() => {
+                        data-tv-focusable
+                        onClick={(e) => {
+                          lastMenuTriggerRef.current = e.currentTarget;
                           setShowQualityMenu(!showQualityMenu);
                           setShowTranslatorMenu(false);
                           setShowSubtitleMenu(false);
                           setShowSpeedMenu(false);
                           setShowEpisodesDrawer(false);
                         }}
-                        className="h-10 flex items-center gap-1.5 px-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white text-xs font-semibold border border-white/15 cursor-pointer flex-shrink-0"
+                        className="h-10 flex items-center gap-1.5 px-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white text-xs font-semibold border border-white/15 cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                       >
                         {isPremiumQuality(selectedQuality?.label) ? (
                           <Crown className="w-4 h-4 text-amber-400 fill-amber-400/25" />
@@ -3195,7 +3432,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       </button>
 
                       {showQualityMenu && streamData && (
-                        <div className="absolute bottom-12 right-0 w-48 bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2 space-y-1 z-50">
+                        <div
+                          ref={qualityMenuRef}
+                          className="absolute bottom-12 right-0 w-48 bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2 space-y-1 z-50"
+                        >
                           <div className="text-[11px] font-bold text-zinc-400 px-2 py-1 uppercase">
                             Якість відео
                           </div>
@@ -3204,9 +3444,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             return (
                               <button
                                 key={q.label}
-                                onClick={() => handleSelectQuality(q)}
+                                data-tv-focusable
+                                onClick={() => {
+                                  handleSelectQuality(q);
+                                  requestAnimationFrame(() => {
+                                    (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+                                  });
+                                }}
                                 className={cn(
-                                  "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                                  "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                                   selectedQuality?.label === q.label
                                     ? "bg-rose-600 text-white"
                                     : "text-zinc-300 hover:bg-white/10"
@@ -3234,29 +3480,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     {streamData && streamData.subtitles.length > 0 && (
                       <div className="relative">
                         <button
-                          onClick={() => {
+                          data-tv-focusable
+                          onClick={(e) => {
+                            lastMenuTriggerRef.current = e.currentTarget;
                             setShowSubtitleMenu(!showSubtitleMenu);
                             setShowQualityMenu(false);
                             setShowTranslatorMenu(false);
                             setShowSpeedMenu(false);
                             setShowEpisodesDrawer(false);
                           }}
-                          className="h-10 w-10 flex items-center justify-center rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 cursor-pointer flex-shrink-0"
+                          className="h-10 w-10 flex items-center justify-center rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                           title="Субтитри"
                         >
                           <Subtitles className="w-4 h-4" />
                         </button>
 
                         {showSubtitleMenu && (
-                          <div className="absolute bottom-12 right-0 w-60 max-h-96 overflow-y-auto bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2.5 space-y-2 z-50">
+                          <div
+                            ref={subtitleMenuRef}
+                            className="absolute bottom-12 right-0 w-60 max-h-96 overflow-y-auto bg-zinc-900 border border-white/15 rounded-2xl shadow-2xl p-2.5 space-y-2 z-50"
+                          >
                             <div className="text-[11px] font-bold text-zinc-400 px-1 uppercase">
                               Субтитри
                             </div>
                             <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
                               <button
-                                onClick={() => handleSelectSubtitle("off")}
+                                data-tv-focusable
+                                onClick={() => {
+                                  handleSelectSubtitle("off");
+                                  requestAnimationFrame(() => {
+                                    (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+                                  });
+                                }}
                                 className={cn(
-                                  "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer",
+                                  "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                                   selectedSubtitle === "off"
                                     ? "bg-rose-600 text-white"
                                     : "text-zinc-300 hover:bg-white/10"
@@ -3268,9 +3525,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                               {streamData.subtitles.map((sub, i) => (
                                 <button
                                   key={i}
-                                  onClick={() => handleSelectSubtitle(sub.url)}
+                                  data-tv-focusable
+                                  onClick={() => {
+                                    handleSelectSubtitle(sub.url);
+                                    requestAnimationFrame(() => {
+                                      (lastMenuTriggerRef.current || playPauseBtnRef.current)?.focus();
+                                    });
+                                  }}
                                   className={cn(
-                                    "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer",
+                                    "w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
                                     selectedSubtitle === sub.url
                                       ? "bg-rose-600 text-white"
                                       : "text-zinc-300 hover:bg-white/10"
@@ -3295,12 +3558,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                                   {(["sm", "md", "lg", "xl"] as const).map((size) => (
                                     <button
                                       key={size}
+                                      data-tv-focusable
                                       onClick={() => {
                                         setSubFontSize(size);
                                         showHud(`Розмір субтитрів: ${size.toUpperCase()}`);
                                       }}
                                       className={cn(
-                                        "py-1 rounded text-[11px] font-bold uppercase transition-all cursor-pointer text-center",
+                                        "py-1 rounded text-[11px] font-bold uppercase transition-all cursor-pointer text-center focus:outline-none focus:ring-4 focus:ring-rose-500",
                                         subFontSize === size
                                           ? "bg-rose-600 text-white"
                                           : "bg-white/5 hover:bg-white/15 text-zinc-300"
@@ -3321,12 +3585,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                                   {[0, 60, 90].map((op) => (
                                     <button
                                       key={op}
+                                      data-tv-focusable
                                       onClick={() => {
                                         setSubBgOpacity(op);
                                         showHud(`Фон субтитрів: ${op}%`);
                                       }}
                                       className={cn(
-                                        "py-1 rounded text-[11px] font-bold transition-all cursor-pointer text-center",
+                                        "py-1 rounded text-[11px] font-bold transition-all cursor-pointer text-center focus:outline-none focus:ring-4 focus:ring-rose-500",
                                         subBgOpacity === op
                                           ? "bg-rose-600 text-white"
                                           : "bg-white/5 hover:bg-white/15 text-zinc-300"
@@ -3348,20 +3613,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                                 </div>
                                 <div className="grid grid-cols-3 gap-1">
                                   <button
+                                    data-tv-focusable
                                     onClick={() => adjustSubtitleOffset(-0.5)}
-                                    className="py-1 rounded text-[11px] font-bold bg-white/5 hover:bg-white/15 text-zinc-300 cursor-pointer text-center"
+                                    className="py-1 rounded text-[11px] font-bold bg-white/5 hover:bg-white/15 text-zinc-300 cursor-pointer text-center focus:outline-none focus:ring-4 focus:ring-rose-500"
                                   >
                                     -0.5с
                                   </button>
                                   <button
+                                    data-tv-focusable
                                     onClick={() => adjustSubtitleOffset(-subOffsetSec)}
-                                    className="py-1 rounded text-[11px] font-bold bg-white/5 hover:bg-white/15 text-zinc-300 cursor-pointer text-center"
+                                    className="py-1 rounded text-[11px] font-bold bg-white/5 hover:bg-white/15 text-zinc-300 cursor-pointer text-center focus:outline-none focus:ring-4 focus:ring-rose-500"
                                   >
                                     0с
                                   </button>
                                   <button
+                                    data-tv-focusable
                                     onClick={() => adjustSubtitleOffset(0.5)}
-                                    className="py-1 rounded text-[11px] font-bold bg-white/5 hover:bg-white/15 text-zinc-300 cursor-pointer text-center"
+                                    className="py-1 rounded text-[11px] font-bold bg-white/5 hover:bg-white/15 text-zinc-300 cursor-pointer text-center focus:outline-none focus:ring-4 focus:ring-rose-500"
                                   >
                                     +0.5с
                                   </button>
@@ -3375,10 +3643,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
                     {/* True Fullscreen Toggle Button */}
                     <button
+                      data-tv-focusable
                       onClick={() => toggleFullscreen()}
                       title={isFullscreen ? "Вийти з повного екрана (F)" : "На весь екран (F)"}
                       data-testid="fullscreen-btn"
-                      className="h-10 w-10 flex items-center justify-center rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 cursor-pointer flex-shrink-0"
+                      className="h-10 w-10 flex items-center justify-center rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
                     >
                       {isFullscreen ? (
                         <Minimize className="w-4 h-4" />

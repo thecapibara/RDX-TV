@@ -1,8 +1,8 @@
 /**
- * RDX-TV - UI Audio Engine (Web Audio API + Original Baked MP3s + 0ms Synth Fallback)
- * Preloads /hovercard.mp3, /opencard.mp3, /buttonclick.mp3 into AudioBuffers with gain boost
- * (since original MP3s peak at -14.7dB..-4.1dB), and falls back directly to 0ms Web Audio
- * oscillators if WebKitGTK cannot decode MP3s in AudioContext.
+ * RDX-TV - UI Audio Engine (Pure Web Audio API Oscillator)
+ * Uses the exact same AudioContext + OscillatorNode pipeline as the boot splash
+ * (which works reliably in WebKitGTK Linux, Android TV WebView, and Samsung Tizen
+ * without GStreamer MP3 decode bugs or suspended-context issues).
  */
 
 const UI_SOUNDS_KEY = "rdx_tv_ui_sounds";
@@ -18,70 +18,47 @@ let uiSoundsEnabled: boolean = (() => {
 
 let lastHoverSoundTime = 0;
 let sharedAudioCtx: AudioContext | null = null;
-const bufferCache = new Map<string, AudioBuffer>();
-const failedBuffers = new Set<string>();
-const loadingBuffers = new Map<string, Promise<AudioBuffer | null>>();
 
-function getAudioContext(): AudioContext | null {
+function withActiveAudioContext(fn: (ctx: AudioContext) => void) {
   try {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return null;
+    if (!AudioCtx) return;
 
     if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
       sharedAudioCtx = new AudioCtx();
     }
-    return sharedAudioCtx;
-  } catch {
-    return null;
-  }
-}
 
-async function loadSoundBuffer(url: string): Promise<AudioBuffer | null> {
-  if (failedBuffers.has(url)) return null;
-  const cached = bufferCache.get(url);
-  if (cached) return cached;
-
-  const inflight = loadingBuffers.get(url);
-  if (inflight) return inflight;
-
-  const ctx = getAudioContext();
-  if (!ctx) return null;
-
-  const promise = (async () => {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        failedBuffers.add(url);
-        return null;
-      }
-      const arr = await res.arrayBuffer();
-      const decoded = await ctx.decodeAudioData(arr);
-      bufferCache.set(url, decoded);
-      return decoded;
-    } catch (err) {
-      console.warn("[RDX-Audio] decodeAudioData failed for", url, "— using Web Audio synth:", err);
-      failedBuffers.add(url);
-      return null;
-    } finally {
-      loadingBuffers.delete(url);
+    const ctx = sharedAudioCtx;
+    if (ctx.state === "suspended") {
+      ctx
+        .resume()
+        .then(() => fn(ctx))
+        .catch(() => {
+          // If shared context failed to resume, create a fresh one in this user gesture
+          try {
+            const fresh = new AudioCtx();
+            sharedAudioCtx = fresh;
+            fn(fresh);
+          } catch {}
+        });
+    } else {
+      fn(ctx);
     }
-  })();
-
-  loadingBuffers.set(url, promise);
-  return promise;
+  } catch {}
 }
 
-function playSynthTone(
+function playTone(
   ctx: AudioContext,
   f1: number,
   f2: number,
   dur: number,
-  peakGain: number
+  peakGain: number,
+  delaySec: number = 0
 ) {
   try {
-    const t = ctx.currentTime;
+    const t = ctx.currentTime + delaySec;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
@@ -93,63 +70,8 @@ function playSynthTone(
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(t);
-    osc.stop(t + dur + 0.015);
+    osc.stop(t + dur + 0.02);
   } catch {}
-}
-
-function playSound(
-  url: string,
-  volume: number,
-  playbackRate: number,
-  fallbackSynth: (ctx: AudioContext) => void
-) {
-  if (!uiSoundsEnabled) return;
-
-  const ctx = getAudioContext();
-  if (!ctx) return;
-
-  const runWithCtx = (fn: () => void) => {
-    if (ctx.state === "suspended") {
-      ctx.resume().then(fn).catch(() => {});
-    } else {
-      fn();
-    }
-  };
-
-  const cached = bufferCache.get(url);
-  if (cached) {
-    runWithCtx(() => {
-      try {
-        const src = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        src.buffer = cached;
-        src.playbackRate.value = playbackRate;
-        gain.gain.value = volume;
-        src.connect(gain);
-        gain.connect(ctx.destination);
-        src.start(0);
-      } catch {
-        fallbackSynth(ctx);
-      }
-    });
-    return;
-  }
-
-  if (failedBuffers.has(url)) {
-    runWithCtx(() => fallbackSynth(ctx));
-    return;
-  }
-
-  // Trigger preload for next time, and play synth immediately on first hit so 0ms latency
-  loadSoundBuffer(url);
-  runWithCtx(() => fallbackSynth(ctx));
-}
-
-// Preload all baked UI sounds on module load
-if (typeof window !== "undefined") {
-  loadSoundBuffer("/hovercard.mp3");
-  loadSoundBuffer("/opencard.mp3");
-  loadSoundBuffer("/buttonclick.mp3");
 }
 
 export const setUiSoundsEnabled = (enabled: boolean) => {
@@ -171,7 +93,7 @@ export const suppressHoverSound = (cooldownMs: number = 400) => {
 };
 
 /**
- * Original baked hover/focus sound (/hovercard.mp3, boosted from -14.7dB) with 0ms synth fallback
+ * Crisp tactile D-pad / focus tick (Apple TV / PS5 style)
  */
 export const playHoverSound = () => {
   if (!uiSoundsEnabled) return;
@@ -179,31 +101,43 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
-  playSound("/hovercard.mp3", 2.8, 1.0, (ctx) => playSynthTone(ctx, 520, 260, 0.04, 0.22));
-};
-
-/**
- * Original baked card/modal open sound (/opencard.mp3, boosted from -9.5dB) with 0ms synth fallback
- */
-export const playModalOpenSound = () => {
-  playSound("/opencard.mp3", 1.8, 1.0, (ctx) => {
-    playSynthTone(ctx, 280, 420, 0.18, 0.18);
-    playSynthTone(ctx, 420, 630, 0.18, 0.12);
+  withActiveAudioContext((ctx) => {
+    playTone(ctx, 540, 280, 0.042, 0.24);
   });
 };
 
 /**
- * Original baked button/OK click sound (/buttonclick.mp3) with 0ms synth fallback
+ * Warm cinematic swell when opening a movie/series card
  */
-export const playButtonClickSound = () => {
-  playSound("/buttonclick.mp3", 1.4, 1.0, (ctx) => playSynthTone(ctx, 760, 340, 0.035, 0.22));
+export const playModalOpenSound = () => {
+  if (!uiSoundsEnabled) return;
+
+  withActiveAudioContext((ctx) => {
+    playTone(ctx, 300, 450, 0.19, 0.2);
+    playTone(ctx, 450, 675, 0.19, 0.14, 0.015);
+  });
 };
 
 /**
- * Back remote sound
+ * Crisp soft click for OK / button press
+ */
+export const playButtonClickSound = () => {
+  if (!uiSoundsEnabled) return;
+
+  withActiveAudioContext((ctx) => {
+    playTone(ctx, 780, 360, 0.036, 0.24);
+  });
+};
+
+/**
+ * Soft downward tick/whoosh when pressing Back on the TV remote
  */
 export const playBackSound = () => {
-  playSound("/buttonclick.mp3", 1.1, 0.78, (ctx) => playSynthTone(ctx, 440, 190, 0.055, 0.18));
+  if (!uiSoundsEnabled) return;
+
+  withActiveAudioContext((ctx) => {
+    playTone(ctx, 460, 200, 0.06, 0.2);
+  });
 };
 
 /**
@@ -226,35 +160,9 @@ export const playAntennaBubblesSound = () => {
       ctx.resume().catch(() => {});
     }
 
-    const triggerBubble = (
-      startOffsetSec: number,
-      startFreq: number,
-      endFreq: number,
-      durationSec: number,
-      peakGain: number
-    ) => {
-      const now = ctx.currentTime + startOffsetSec;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(startFreq, now);
-      osc.frequency.exponentialRampToValueAtTime(endFreq, now + durationSec);
-
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.linearRampToValueAtTime(peakGain, now + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + durationSec);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + durationSec + 0.02);
-    };
-
-    triggerBubble(0.0, 310, 690, 0.085, 0.22);
-    triggerBubble(0.07, 460, 980, 0.09, 0.18);
-    triggerBubble(0.145, 640, 1220, 0.07, 0.11);
+    playTone(ctx, 310, 690, 0.085, 0.22, 0.0);
+    playTone(ctx, 460, 980, 0.09, 0.18, 0.07);
+    playTone(ctx, 640, 1220, 0.07, 0.11, 0.145);
 
     setTimeout(() => {
       ctx.close().catch(() => {});

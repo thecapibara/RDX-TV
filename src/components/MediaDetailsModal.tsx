@@ -117,8 +117,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
     // Try fetching TMDB backdrop immediately in parallel
     const yearMatch = media.misc_info?.match(/\b(19|20)\d{2}\b/);
+    const cardMediaType: "movie" | "tv" =
+      media.entity_type === "series" || media.url.includes("/series/") ? "tv" : "movie";
     api
-      .getBackdrop(media.title, undefined, yearMatch?.[0])
+      .getBackdrop(media.title, undefined, yearMatch?.[0], cardMediaType)
       .then((url) => {
         if (isMounted && url) setBackdropUrl(url);
       })
@@ -135,12 +137,17 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         ]);
         if (!isMounted) return;
 
-        // Refine TMDB backdrop using orig_title + year if we didn't get one yet
+        // Refine TMDB backdrop using orig_title + year + mediaType
         const detYear =
-          det.info_table.find(([k]) => k.toLowerCase().includes("рік") || k.toLowerCase().includes("год"))?.[1]?.match(/\b(19|20)\d{2}\b/)?.[0] ||
-          yearMatch?.[0];
+          det.info_table
+            .find(([k]) => {
+              const lk = k.toLowerCase();
+              return lk.includes("рік") || lk.includes("год") || lk.includes("дата");
+            })?.[1]
+            ?.match(/\b(19|20)\d{2}\b/)?.[0] || yearMatch?.[0];
+        const detMediaType: "movie" | "tv" = det.seasons.length > 0 ? "tv" : cardMediaType;
         api
-          .getBackdrop(det.title, det.orig_title || undefined, detYear)
+          .getBackdrop(det.title, det.orig_title || undefined, detYear, detMediaType)
           .then((url) => {
             if (isMounted && url) setBackdropUrl(url);
           })

@@ -52,6 +52,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 }) => {
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  const [backdropLoaded, setBackdropLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [savedProgress, setSavedProgress] = useState<WatchProgress | null>(null);
@@ -104,12 +105,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     if (!isOpen || !media) {
       setDetails(null);
       setBackdropUrl(null);
+      setBackdropLoaded(false);
       setFetchError(null);
       setIsTranslatorModalOpen(false);
       return;
     }
 
     let isMounted = true;
+    setBackdropLoaded(false);
     playModalOpenSound();
 
     // Try fetching TMDB backdrop immediately in parallel
@@ -361,8 +364,6 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   })();
 
   const fallbackPoster = details?.high_res_poster || details?.poster || media.poster;
-  const heroImage = backdropUrl || fallbackPoster;
-  const isUsingTmdbBackdrop = Boolean(backdropUrl);
 
   // Extract concise metadata badges
   const yearVal = details?.info_table.find(([k]) => k.toLowerCase().includes("рік") || k.toLowerCase().includes("год"))?.[1];
@@ -377,19 +378,32 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     >
       {/* Apple TV / Disney+ Full-Bleed Right-Aligned Hero Section */}
       <div className="relative min-h-[72vh] w-full flex flex-col justify-end">
-        {/* Right-side / Full-bleed Backdrop Image */}
+        {/* Right-side / Full-bleed Backdrop Image (two-layer cross-fade, zero flicker) */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {/* Base HDRezka fallback layer */}
           <img
-            src={heroImage}
-            alt={details?.title || media.title}
+            src={fallbackPoster}
+            alt=""
+            aria-hidden="true"
             decoding="async"
             className={cn(
-              "w-full h-full object-cover transition-opacity duration-700",
-              isUsingTmdbBackdrop
-                ? "object-right-top sm:object-[70%_20%] opacity-90"
-                : "object-right opacity-55 blur-[4px] scale-105"
+              "w-full h-full object-cover object-right blur-[6px] scale-105 transition-opacity duration-500",
+              backdropLoaded ? "opacity-0" : "opacity-50"
             )}
           />
+          {/* High-res TMDB backdrop layer (fades in only after image finishes decoding) */}
+          {backdropUrl && (
+            <img
+              src={backdropUrl}
+              alt={details?.title || media.title}
+              decoding="async"
+              onLoad={() => setBackdropLoaded(true)}
+              className={cn(
+                "absolute inset-0 w-full h-full object-cover object-right-top sm:object-[70%_20%] transition-opacity duration-500 ease-out",
+                backdropLoaded ? "opacity-90" : "opacity-0"
+              )}
+            />
+          )}
           {/* Left-to-right cinematic fade so left text & buttons are 100% legible */}
           <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/90 via-40% to-transparent" />
           {/* Top subtle vignette */}

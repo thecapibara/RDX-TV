@@ -36,7 +36,8 @@ pub struct TmdbService {
 impl TmdbService {
     pub fn new() -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(3))
+            .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+            .timeout(Duration::from_secs(5))
             .user_agent("RDX-Cinema/1.0")
             .build()
             .unwrap_or_default();

@@ -417,7 +417,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
 
       {/* Right Spacious TV Content Pane */}
       <main className="flex-1 overflow-y-auto p-8 lg:p-12">
-        <div className="max-w-3xl space-y-6">
+        <div className="max-w-3xl mx-auto space-y-6">
           {/* ================= TAB 1: NETWORK & MIRRORS ================= */}
           {activeTab === "network" && (
             <>

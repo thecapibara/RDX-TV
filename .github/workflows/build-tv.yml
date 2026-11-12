@@ -8,6 +8,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-android-tv:
     name: Android TV APK
@@ -125,3 +128,27 @@ jobs:
         with:
           name: RDX-TV-tizen-bundle
           path: artifacts/RDX-TV-tizen-dist.zip
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-android-tv, build-tizen-bundle]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Android TV APK
+        uses: actions/download-artifact@v4
+        with:
+          name: RDX-TV-android-tv-apk
+          path: release-assets
+
+      - name: Download Samsung Tizen Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: RDX-TV-tizen-bundle
+          path: release-assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true

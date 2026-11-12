@@ -413,7 +413,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         </div>
 
         {/* Left Content Column (10-foot safe-area padding) */}
-        <div className="relative z-10 px-[4vw] pt-10 pb-8 max-w-3xl space-y-5">
+        <div className="relative z-10 px-[4vw] pt-10 pb-8 max-w-4xl space-y-5">
           {/* Type & Rating Badges Row */}
           <div className="flex flex-wrap items-center gap-2.5 text-sm font-semibold">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 text-white font-bold uppercase tracking-wider text-xs shadow-lg shadow-rose-950/50">
@@ -468,7 +468,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           )}
 
           {/* Primary TV Action Buttons Row */}
-          <div data-tv-row="details-actions" className="flex flex-wrap items-center gap-3.5 pt-2">
+          <div data-tv-row="details-actions" className="flex items-center gap-3 pt-2 whitespace-nowrap">
             {loading ? (
               <div className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-white/10 text-zinc-200 text-base font-semibold">
                 <Loader2 className="w-5 h-5 animate-spin text-rose-500" />
@@ -482,7 +482,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   playButtonClickSound();
                   handleStartPlayback();
                 }}
-                className="flex items-center gap-3 px-8 py-3.5 rounded-2xl bg-white text-black hover:bg-zinc-200 font-extrabold text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer"
+                className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-white text-black hover:bg-zinc-200 font-extrabold text-base shadow-2xl transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer shrink-0"
               >
                 <Play className="w-5 h-5 fill-current" />
                 <span>
@@ -496,7 +496,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 </span>
               </button>
             ) : (
-              <div className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-base font-bold">
+              <div className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-base font-bold shrink-0">
                 <Clock className="w-5 h-5" />
                 <span>Очікується реліз</span>
               </div>
@@ -510,7 +510,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   playButtonClickSound();
                   setIsTranslatorModalOpen(true);
                 }}
-                className="flex items-center gap-2.5 px-5 py-3.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 text-base font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer max-w-xs"
+                className="flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 text-sm sm:text-base font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer max-w-[230px] shrink-0"
               >
                 <Mic className="w-4 h-4 text-rose-400 shrink-0" />
                 <span className="truncate">{selectedTranslator?.name || "Озвучення"}</span>
@@ -537,7 +537,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 }}
                 title={isBookmarked ? "Видалити із закладок" : "Додати в закладки"}
                 className={cn(
-                  "p-3.5 rounded-2xl border transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer",
+                  "p-3.5 rounded-2xl border transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer shrink-0",
                   isBookmarked
                     ? "bg-amber-500/20 text-amber-300 border-amber-400/50"
                     : "bg-zinc-900/90 text-zinc-200 border-white/15 hover:bg-zinc-800"
@@ -547,15 +547,15 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               </button>
             )}
 
-            {/* Back Button (also mapped to remote Back/Escape) */}
+            {/* Back Button (compact icon; also mapped to remote Back/Escape) */}
             <button
               data-tv-focusable
               onClick={handleClose}
               title="Назад"
-              className="flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 text-base font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer"
+              aria-label="Назад"
+              className="p-3.5 rounded-2xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 focus:scale-105 cursor-pointer shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
-              <span>Назад</span>
             </button>
           </div>
         </div>

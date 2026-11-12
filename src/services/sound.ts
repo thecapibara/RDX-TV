@@ -1,7 +1,7 @@
 /**
- * RDX-TV - UI Audio Engine (Pure Web Audio API)
- * Lightweight synthesized UI feedback sounds for Android TV, Samsung Tizen, and WebKit.
- * Zero native dependency, zero latency, and rate-limiting against rapid traversal.
+ * RDX-TV - UI Audio Engine (Web Audio API + Original Baked MP3s)
+ * Preloads & decodes the original RDX MP3 assets (/hovercard.mp3, /opencard.mp3, /buttonclick.mp3)
+ * into AudioBuffers for 0ms latency playback across Android TV, Samsung Tizen, and Desktop.
  */
 
 // Initialize state from localStorage (default: true on TV, ON by default unless explicitly disabled)
@@ -15,28 +15,109 @@ let uiSoundsEnabled: boolean = (() => {
 
 let lastHoverSoundTime = 0;
 let sharedAudioCtx: AudioContext | null = null;
+const bufferCache = new Map<string, AudioBuffer>();
+const loadingBuffers = new Map<string, Promise<AudioBuffer | null>>();
 
-function withAudioContext(fn: (ctx: AudioContext) => void) {
+function getAudioContext(): AudioContext | null {
   try {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
+    if (!AudioCtx) return null;
 
     if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
       sharedAudioCtx = new AudioCtx();
     }
-
-    const ctx = sharedAudioCtx;
-    if (ctx.state === "suspended") {
-      ctx
-        .resume()
-        .then(() => fn(ctx))
-        .catch(() => {});
-    } else {
-      fn(ctx);
+    if (sharedAudioCtx.state === "suspended") {
+      sharedAudioCtx.resume().catch(() => {});
     }
-  } catch {}
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+async function loadSoundBuffer(url: string): Promise<AudioBuffer | null> {
+  const cached = bufferCache.get(url);
+  if (cached) return cached;
+
+  const inflight = loadingBuffers.get(url);
+  if (inflight) return inflight;
+
+  const ctx = getAudioContext();
+  if (!ctx) return null;
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const arr = await res.arrayBuffer();
+      const decoded = await ctx.decodeAudioData(arr);
+      bufferCache.set(url, decoded);
+      return decoded;
+    } catch {
+      return null;
+    } finally {
+      loadingBuffers.delete(url);
+    }
+  })();
+
+  loadingBuffers.set(url, promise);
+  return promise;
+}
+
+function playBakedMp3(url: string, volume: number = 0.85, playbackRate: number = 1.0) {
+  if (!uiSoundsEnabled) return;
+
+  const ctx = getAudioContext();
+  if (!ctx) {
+    // Fallback to HTMLAudioElement if Web Audio API is unavailable
+    try {
+      const audio = new Audio(url);
+      audio.volume = Math.min(1, volume);
+      audio.playbackRate = playbackRate;
+      audio.play().catch(() => {});
+    } catch {}
+    return;
+  }
+
+  const startBuffer = (buffer: AudioBuffer) => {
+    const doPlay = () => {
+      try {
+        const src = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        src.buffer = buffer;
+        src.playbackRate.value = playbackRate;
+        gain.gain.value = volume;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(0);
+      } catch {}
+    };
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(doPlay).catch(() => {});
+    } else {
+      doPlay();
+    }
+  };
+
+  const cached = bufferCache.get(url);
+  if (cached) {
+    startBuffer(cached);
+    return;
+  }
+
+  loadSoundBuffer(url).then((buf) => {
+    if (buf) startBuffer(buf);
+  });
+}
+
+// Preload all baked UI sounds on module load
+if (typeof window !== "undefined") {
+  loadSoundBuffer("/hovercard.mp3");
+  loadSoundBuffer("/opencard.mp3");
+  loadSoundBuffer("/buttonclick.mp3");
 }
 
 export const setUiSoundsEnabled = (enabled: boolean) => {
@@ -51,15 +132,14 @@ export const getUiSoundsEnabled = (): boolean => {
 };
 
 /**
- * Temporarily suppress hover sound triggers (e.g. when closing modal or navigating back,
- * so the card appearing under the cursor doesn't play an accidental hover sound).
+ * Temporarily suppress hover sound triggers (e.g. when closing modal or navigating back).
  */
 export const suppressHoverSound = (cooldownMs: number = 400) => {
   lastHoverSoundTime = performance.now() + cooldownMs;
 };
 
 /**
- * Crisp tactile D-pad / focus tick (Apple TV / PS5 style, audible on laptop & TV speakers)
+ * Original baked hover/focus sound (/hovercard.mp3)
  */
 export const playHoverSound = () => {
   if (!uiSoundsEnabled) return;
@@ -67,126 +147,28 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
-  withAudioContext((ctx) => {
-    const t = ctx.currentTime;
-    const dur = 0.038;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(520, t);
-    osc.frequency.exponentialRampToValueAtTime(260, t + dur);
-
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.18, t + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(t);
-    osc.stop(t + dur + 0.01);
-  });
+  playBakedMp3("/hovercard.mp3", 0.7);
 };
 
 /**
- * Warm cinematic swell when opening a movie/series card
+ * Original baked card/modal open sound (/opencard.mp3)
  */
 export const playModalOpenSound = () => {
-  if (!uiSoundsEnabled) return;
-
-  withAudioContext((ctx) => {
-    const t = ctx.currentTime;
-    const dur = 0.19;
-
-    const oscRoot = ctx.createOscillator();
-    const oscFifth = ctx.createOscillator();
-    const filter = ctx.createBiquadFilter();
-    const gain = ctx.createGain();
-
-    oscRoot.type = "sine";
-    oscRoot.frequency.setValueAtTime(280, t);
-    oscRoot.frequency.exponentialRampToValueAtTime(420, t + dur);
-
-    oscFifth.type = "sine";
-    oscFifth.frequency.setValueAtTime(420, t);
-    oscFifth.frequency.exponentialRampToValueAtTime(630, t + dur);
-
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(1100, t);
-
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.16, t + 0.025);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-
-    oscRoot.connect(filter);
-    oscFifth.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-
-    oscRoot.start(t);
-    oscFifth.start(t);
-    oscRoot.stop(t + dur + 0.02);
-    oscFifth.stop(t + dur + 0.02);
-  });
+  playBakedMp3("/opencard.mp3", 0.85);
 };
 
 /**
- * Crisp soft click for OK / button press
+ * Original baked button/OK click sound (/buttonclick.mp3)
  */
 export const playButtonClickSound = () => {
-  if (!uiSoundsEnabled) return;
-
-  withAudioContext((ctx) => {
-    const t = ctx.currentTime;
-    const dur = 0.032;
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(760, t);
-    osc.frequency.exponentialRampToValueAtTime(340, t + dur);
-
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.2, t + 0.003);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(t);
-    osc.stop(t + dur + 0.01);
-  });
+  playBakedMp3("/buttonclick.mp3", 0.85);
 };
 
 /**
- * Soft downward tick/whoosh when pressing Back on the TV remote
+ * Back remote sound (slightly lower-pitched baked click)
  */
 export const playBackSound = () => {
-  if (!uiSoundsEnabled) return;
-
-  withAudioContext((ctx) => {
-    const t = ctx.currentTime;
-    const dur = 0.055;
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(440, t);
-    osc.frequency.exponentialRampToValueAtTime(190, t + dur);
-
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.16, t + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(t);
-    osc.stop(t + dur + 0.01);
-  });
+  playBakedMp3("/buttonclick.mp3", 0.65, 0.78);
 };
 
 /**

@@ -1,10 +1,7 @@
-pub mod audio;
 pub mod cdn;
 pub mod client;
 pub mod commands;
-pub mod downloader;
 pub mod mirror;
-pub mod mpris;
 pub mod parser;
 pub mod storage;
 pub mod tmdb;
@@ -13,7 +10,6 @@ pub mod turbo;
 use std::sync::Arc;
 use client::{default_cookie_path, HttpClient, PersistentCookieStore};
 use commands::AppState;
-use mpris::MprisState;
 use storage::{default_db_path, Storage};
 
 pub fn run() {
@@ -37,8 +33,6 @@ pub fn run() {
             .expect("failed to initialize HTTP client"),
     );
 
-    let mpris = Arc::new(MprisState::new());
-    let downloader = Arc::new(downloader::DownloadManager::new(storage.clone()));
     let turbo = Arc::new(turbo::TurboServer::new(client.get_reqwest_client()));
     let tmdb = Arc::new(tmdb::TmdbService::new());
     let turbo_spawn = turbo.clone();
@@ -48,30 +42,14 @@ pub fn run() {
         }
     });
 
-    let state = AppState { storage, client, mpris, downloader, turbo, tmdb };
+    let state = AppState { storage, client, turbo, tmdb };
 
     tauri::Builder::default()
         .manage(state)
         .setup(|app| {
-            use tauri::Manager;
-
-            // 1. Initialize native Rust MPRIS while DBUS_SESSION_BUS_ADDRESS is valid
-            let state: tauri::State<AppState> = app.state();
-            state.mpris.init(&app.handle());
-
-            // 2. Play instant boot chime if enabled (native PipeWire/PulseAudio/ALSA)
-            let startup_sound_enabled = state
-                .storage
-                .get_settings()
-                .map(|s| s.startup_sound)
-                .unwrap_or(true);
-
-            if startup_sound_enabled {
-                crate::audio::play_startup_sound(Some(0.55));
-            }
-
             #[cfg(target_os = "linux")]
             {
+                use tauri::Manager;
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.with_webview(|webview| {
                         use webkit2gtk::{SettingsExt, WebViewExt};
@@ -94,17 +72,6 @@ pub fn run() {
             commands::get_continue_watching,
             commands::delete_watch_progress,
             commands::get_episode_progress,
-            commands::start_download,
-            commands::pause_download,
-            commands::resume_download,
-            commands::cancel_download,
-            commands::delete_download,
-            commands::get_downloads,
-            commands::get_downloads_dir,
-            commands::pause_all_downloads,
-            commands::resume_all_downloads,
-            commands::clear_completed_downloads,
-            commands::show_in_folder,
             commands::open_url,
             commands::toggle_bookmark,
             commands::get_bookmarks,
@@ -122,14 +89,8 @@ pub fn run() {
             commands::get_media_details,
             commands::get_stream,
             commands::get_episodes,
-            commands::set_mini_player_mode,
             commands::set_fullscreen_mode,
             commands::start_drag_window,
-            commands::open_in_external_player,
-            commands::update_mpris_state,
-            commands::clear_mpris_state,
-            commands::play_startup_sound,
-            commands::play_ui_sound,
             commands::get_turbo_stream_url,
             commands::get_turbo_stats,
             commands::select_fastest_cdn,
@@ -139,5 +100,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-

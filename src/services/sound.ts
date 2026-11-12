@@ -1,10 +1,8 @@
 /**
- * RDX Obsidian Crimson - UI Audio Engine
- * Hardware-level native sound dispatch via Rust (rodio/PipeWire) with 0ms latency,
- * zero WebKitGTK bugs, and rate-limiting against rapid mouse sweep.
+ * RDX-TV - UI Audio Engine (Pure Web Audio API)
+ * Lightweight synthesized UI feedback sounds for Android TV, Samsung Tizen, and WebKit.
+ * Zero native dependency, zero latency, and rate-limiting against rapid cursor sweeps.
  */
-
-import { api } from "./api";
 
 // Initialize state from localStorage (default: false, OFF by default)
 let uiSoundsEnabled: boolean = (() => {
@@ -16,6 +14,26 @@ let uiSoundsEnabled: boolean = (() => {
 })();
 
 let lastHoverSoundTime = 0;
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return null;
+
+    if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
+      sharedAudioCtx = new AudioCtx();
+    }
+    if (sharedAudioCtx.state === "suspended") {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
 
 export const setUiSoundsEnabled = (enabled: boolean) => {
   uiSoundsEnabled = enabled;
@@ -37,8 +55,8 @@ export const suppressHoverSound = (cooldownMs: number = 400) => {
 };
 
 /**
- * Tactile, warm velvet hover tap (Apple TV / PS5 focus style)
- * Rate-limited to prevent rapid mouse traversal flutter.
+ * Subtle velvet tap for hover/focus (Apple TV / PS5 focus style)
+ * Rate-limited to prevent rapid traversal flutter.
  */
 export const playHoverSound = () => {
   if (!uiSoundsEnabled) return;
@@ -46,23 +64,105 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 110) return;
   lastHoverSoundTime = now;
 
-  api.playUiSound("hover");
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(75, t + 0.045);
+
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(t);
+    osc.stop(t + 0.05);
+  } catch {}
 };
 
 /**
- * Cinematic opening swell when selecting a movie/series card
+ * Warm low-pass swell for modal open
  */
 export const playModalOpenSound = () => {
   if (!uiSoundsEnabled) return;
-  api.playUiSound("modal_open");
+
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const dur = 0.22;
+
+    const oscRoot = ctx.createOscillator();
+    const oscFifth = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+
+    oscRoot.type = "sine";
+    oscRoot.frequency.setValueAtTime(150, t);
+    oscRoot.frequency.exponentialRampToValueAtTime(220, t + dur);
+
+    oscFifth.type = "sine";
+    oscFifth.frequency.setValueAtTime(225, t);
+    oscFifth.frequency.exponentialRampToValueAtTime(330, t + dur);
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(480, t);
+
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.07, t + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    oscRoot.connect(filter);
+    oscFifth.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    oscRoot.start(t);
+    oscFifth.start(t);
+    oscRoot.stop(t + dur + 0.02);
+    oscFifth.stop(t + dur + 0.02);
+  } catch {}
 };
 
 /**
- * Tactile interface button click sound (navigation tabs, category filters, pagination)
+ * Crisp soft click for button click (navigation tabs, filters, buttons)
  */
 export const playButtonClickSound = () => {
   if (!uiSoundsEnabled) return;
-  api.playUiSound("button_click");
+
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const dur = 0.026;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(620, t);
+    osc.frequency.exponentialRampToValueAtTime(220, t + dur);
+
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.09, t + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(t);
+    osc.stop(t + dur + 0.01);
+  } catch {}
 };
 
 /**

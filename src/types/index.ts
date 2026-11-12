@@ -158,37 +158,3 @@ export interface EpisodesData {
   episodes: EpisodeTab[];
   stream_data: StreamData | null;
 }
-
-export interface DownloadItem {
-  id: string;
-  media_id: string;
-  media_url: string;
-  title: string;
-  orig_title?: string | null;
-  poster_url: string;
-  media_type: string; // "movie", "series", "cartoon", "anime"
-  genres: string;
-  translator_id: string;
-  translator_name: string;
-  season?: number | null;
-  episode?: number | null;
-  quality: string;
-  stream_url: string;
-  file_path: string;
-  temp_path: string;
-  total_bytes: number;
-  downloaded_bytes: number;
-  speed_bytes_sec?: number;
-  status: "queued" | "downloading" | "paused" | "completed" | "error";
-  error_message?: string | null;
-  created_at: number;
-  completed_at?: number | null;
-}
-
-export interface DownloadProgressEvent {
-  id: string;
-  downloaded_bytes: number;
-  total_bytes: number;
-  speed_bytes_sec: number;
-  status: string;
-}

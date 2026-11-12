@@ -1,15 +1,13 @@
 import React, { useState } from "react";
-import { Play, Star, Loader2, ArrowDownCircle, Clock, Pause } from "lucide-react";
+import { Play, Star, Loader2 } from "lucide-react";
 import type { MediaCard as MediaCardType } from "../types";
 import { cn } from "../lib/utils";
 import { playHoverSound } from "../services/sound";
-import { useMediaDownload, openDownloadsTab } from "../services/downloadsStore";
 
 interface MediaCardProps {
   card: MediaCardType;
   onSelect: (card: MediaCardType) => void;
   onPlayDirect?: (card: MediaCardType) => void;
-  onOpenDownloads?: () => void;
   className?: string;
 }
 
@@ -17,11 +15,9 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
   card,
   onSelect,
   onPlayDirect,
-  onOpenDownloads,
   className,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const downloadInfo = useMediaDownload(card.id);
 
   const handlePlayClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -35,15 +31,6 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
       }
     } else {
       onSelect(card);
-    }
-  };
-
-  const handleDownloadClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onOpenDownloads) {
-      onOpenDownloads();
-    } else {
-      openDownloadsTab();
     }
   };
 
@@ -122,54 +109,6 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
             )}
           </button>
         </div>
-
-        {/* Bottom-Left Badge: Active Download State */}
-        {downloadInfo && (
-          <div
-            onClick={handleDownloadClick}
-            className="absolute bottom-2.5 left-2.5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-950/95 hover:bg-rose-950/95 text-rose-400 hover:text-rose-300 border border-rose-500/40 hover:border-rose-400 transition-all cursor-pointer shadow-xl backdrop-blur-md group/badge"
-            title="Завантажується. Натисніть, щоб відкрити список завантажень"
-          >
-            {downloadInfo.status === "downloading" ? (
-              <>
-                <ArrowDownCircle className="w-3.5 h-3.5 animate-pulse text-rose-500 group-hover/badge:rotate-12 transition-transform shrink-0" />
-                <span className="text-[11px] font-bold tracking-tight">
-                  {downloadInfo.progress}%
-                </span>
-                {downloadInfo.activeCount > 1 && (
-                  <span className="text-[10px] text-zinc-400 font-medium">
-                    ({downloadInfo.activeCount})
-                  </span>
-                )}
-              </>
-            ) : downloadInfo.status === "queued" ? (
-              <>
-                <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="text-[11px] font-bold text-amber-400">В черзі</span>
-                {downloadInfo.activeCount > 1 && (
-                  <span className="text-[10px] text-zinc-400 font-medium">
-                    ({downloadInfo.activeCount})
-                  </span>
-                )}
-              </>
-            ) : (
-              <>
-                <Pause className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                <span className="text-[11px] font-bold text-zinc-300">Пауза</span>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Bottom Progress Bar for Active Download */}
-        {downloadInfo && downloadInfo.status === "downloading" && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/70 overflow-hidden z-20">
-            <div
-              className="h-full bg-rose-500 transition-all duration-300 shadow-[0_0_8px_rgba(244,63,94,0.9)]"
-              style={{ width: `${Math.max(4, downloadInfo.progress)}%` }}
-            />
-          </div>
-        )}
 
         {/* Bottom-Right Badge: Rating */}
         {card.rating && (

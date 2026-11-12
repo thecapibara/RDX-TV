@@ -47,7 +47,7 @@ import { cn } from "../lib/utils";
 import { VideoEnhanceMode, VideoShaderRenderer } from "../utils/videoShaders";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface ThumbnailCue {
   start: number;
@@ -1055,48 +1055,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setLoopB(null);
 
       try {
-        let data: StreamData | null = null;
-        if (details.is_offline) {
-          const allDownloads = await api.getDownloads();
-          const target =
-            allDownloads.find(
-              (d) =>
-                d.media_id === details.id &&
-                d.status === "completed" &&
-                (!effectiveTranslatorId || d.translator_id === effectiveTranslatorId) &&
-                (!isSeries || ((d.season ?? 1) === (activeSeason || 1) && (d.episode ?? 1) === (activeEpisode || 1)))
-            ) ||
-            allDownloads.find(
-              (d) =>
-                d.media_id === details.id &&
-                d.status === "completed" &&
-                (!isSeries || ((d.season ?? 1) === (activeSeason || 1) && (d.episode ?? 1) === (activeEpisode || 1)))
-            );
-
-          if (target) {
-            data = {
-              qualities: [
-                {
-                  label: target.quality || "1080p",
-                  hls_url: null,
-                  mp4_url: convertFileSrc(target.file_path),
-                },
-              ],
-              subtitles: [],
-              default_quality: target.quality || "1080p",
-              thumbnails: null,
-            };
-          }
-        } else {
-          data = await api.getStream(
-            details.id,
-            details.url,
-            isSeries,
-            effectiveTranslatorId,
-            isSeries ? activeSeason || 1 : undefined,
-            isSeries ? activeEpisode || 1 : undefined
-          );
-        }
+        const data: StreamData | null = await api.getStream(
+          details.id,
+          details.url,
+          isSeries,
+          effectiveTranslatorId,
+          isSeries ? activeSeason || 1 : undefined,
+          isSeries ? activeEpisode || 1 : undefined
+        );
 
         if (isCancelled || reqId !== streamRequestIdRef.current) {
           return;
@@ -1455,7 +1421,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const lastMediaSessionKeyRef = useRef<string>("");
 
   const syncMprisState = useCallback(
-    (force = false, overridePlaying?: boolean, overrideTime?: number) => {
+    (force = false, overridePlaying?: boolean, _overrideTime?: number) => {
       if (!details.title) return;
       const now = performance.now();
       // Throttle continuous position updates to once per 1000ms unless forced
@@ -1471,9 +1437,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         ? `Озвучка: ${currentTranslator.name}`
         : (details.orig_title || "RDX");
 
-      const effDur = getEffectiveDuration();
-      const liveTime = videoRef.current?.currentTime ?? 0;
-      const currentPos = overrideTime !== undefined ? overrideTime : liveTime;
       const playing = overridePlaying !== undefined ? overridePlaying : isPlaying;
 
       // Sync WebKitGTK MediaSession metadata so its built-in MPRIS never falls back to "localhost"
@@ -1492,18 +1455,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           navigator.mediaSession.playbackState = playing ? "playing" : "paused";
         } catch {}
       }
-
-      api
-        .updateMprisState({
-          title: details.title,
-          artist,
-          album,
-          poster: details.poster,
-          durationSec: effDur > 0 ? effDur : undefined,
-          positionSec: currentPos >= 0 ? currentPos : undefined,
-          isPlaying: playing,
-        })
-        .catch(() => {});
     },
     [
       details.title,
@@ -1546,11 +1497,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       isFullscreenRef.current = false;
     }
 
-    // If player was in OS PiP mode, restore normal window size so it doesn't get stuck in 520x292
-    if (mode === "os_pip" || modeRef.current === "os_pip") {
-      api.setMiniPlayerMode(false).catch(() => {});
-    }
-
     document.title = "";
 
     // 0. Instantly clear webview mediaSession so WebKit drops its MPRIS player
@@ -1560,9 +1506,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         navigator.mediaSession.playbackState = "none";
       } catch {}
     }
-
-    // Instantly remove player card from Linux / OS system shade
-    api.clearMprisState().catch(() => {});
 
     // 1. Auto-save current watch progress
     saveCurrentProgress();
@@ -1601,11 +1544,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         api.setFullscreenMode(false).catch(() => {});
       }
 
-      // If player was in OS PiP mode, restore normal window size
-      if (modeRef.current === "os_pip") {
-        api.setMiniPlayerMode(false).catch(() => {});
-      }
-
       document.title = "";
       if (typeof navigator !== "undefined" && "mediaSession" in navigator && navigator.mediaSession) {
         try {
@@ -1613,7 +1551,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           navigator.mediaSession.playbackState = "none";
         } catch {}
       }
-      api.clearMprisState().catch(() => {});
 
       const video = videoRef.current;
       if (video) {
@@ -2000,20 +1937,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Always-on-Top OS PiP Toggle (Tauri command)
+  // Picture-in-Picture Toggle (Web PiP)
   const handleSetOsPip = async (enable: boolean) => {
     try {
-      await api.setMiniPlayerMode(enable);
-      onModeChange(enable ? "os_pip" : "full");
-    } catch (e) {
-      console.warn("Tauri setMiniPlayerMode failed, fallback to Web PiP:", e);
       if (videoRef.current && document.pictureInPictureEnabled) {
-        if (!document.pictureInPictureElement) {
-          videoRef.current.requestPictureInPicture().catch(() => {});
-        } else {
-          document.exitPictureInPicture().catch(() => {});
+        if (enable && !document.pictureInPictureElement) {
+          await videoRef.current.requestPictureInPicture();
+          onModeChange("os_pip");
+        } else if (!enable && document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+          onModeChange("full");
         }
       }
+    } catch (e) {
+      console.warn("Web PiP failed:", e);
     }
   };
 

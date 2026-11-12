@@ -510,12 +510,12 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4.5 border-b border-[var(--border-subtle,rgba(255,255,255,0.08))] bg-[var(--bg-elevated,#1e1f2b)]/80 transition-colors duration-250">
           <div className="flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-600 to-rose-950 border border-rose-500/30 flex items-center justify-center text-white shadow-lg shadow-rose-950/50 flex-shrink-0">
-              <span className="font-black text-sm tracking-tighter">RDX</span>
+              <span className="font-black text-xs tracking-tighter">RDX-TV</span>
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-black text-white tracking-tight flex items-baseline">
-                  Налаштування RDX<span className="text-rose-500 text-lg leading-none">.</span>
+                  Налаштування RDX-TV<span className="text-rose-500 text-lg leading-none">.</span>
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/5 border border-white/10 text-zinc-400">
                   v1.0.9
@@ -1495,13 +1495,13 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                   <div className="p-5 relative -mt-12 sm:-mt-16 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
                     <div>
                       <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-baseline">
-                        RDX<span className="text-rose-500">.</span>
+                        RDX-TV<span className="text-rose-500">.</span>
                         <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full ml-2.5">
                           v1.0.9
                         </span>
                       </h3>
                       <p className="text-xs text-zinc-300 mt-1 max-w-lg leading-relaxed">
-                        Преміальний десктопний клієнт для онлайн-кінотеатру HDRezka з кінематографічним інтерфейсом Smart TV, апаратними шейдерами та офлайн-завантажувачем.
+                        Клієнт для онлайн-кінотеатру HDRezka з кінематографічним інтерфейсом Smart TV та апаратними шейдерами.
                       </p>
                       <div className="flex items-center gap-3 mt-3">
                         <div className="flex items-center gap-1.5 text-xs text-zinc-400">

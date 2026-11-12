@@ -1,8 +1,8 @@
 /**
  * RDX-TV - UI Audio Engine (Pure Web Audio API Oscillator)
- * Uses the exact same AudioContext + OscillatorNode pipeline as the boot splash
- * (which works reliably in WebKitGTK Linux, Android TV WebView, and Samsung Tizen
- * without GStreamer MP3 decode bugs or suspended-context issues).
+ * Stores a single AudioContext on window.__rdxAudioCtx so Vite HMR never leaks
+ * WebKitGTK/PipeWire audio sinks, and triggers OscillatorNode synchronously
+ * inside user gestures just like the boot splash.
  */
 
 const UI_SOUNDS_KEY = "rdx_tv_ui_sounds";
@@ -17,36 +17,26 @@ let uiSoundsEnabled: boolean = (() => {
 })();
 
 let lastHoverSoundTime = 0;
-let sharedAudioCtx: AudioContext | null = null;
 
-function withActiveAudioContext(fn: (ctx: AudioContext) => void) {
+function getOrCreateAudioContext(): AudioContext | null {
   try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
+    const win = window as unknown as {
+      __rdxAudioCtx?: AudioContext;
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AudioCtx = window.AudioContext || win.webkitAudioContext;
+    if (!AudioCtx) return null;
 
-    if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
-      sharedAudioCtx = new AudioCtx();
+    if (!win.__rdxAudioCtx || win.__rdxAudioCtx.state === "closed") {
+      win.__rdxAudioCtx = new AudioCtx();
     }
-
-    const ctx = sharedAudioCtx;
-    if (ctx.state === "suspended") {
-      ctx
-        .resume()
-        .then(() => fn(ctx))
-        .catch(() => {
-          // If shared context failed to resume, create a fresh one in this user gesture
-          try {
-            const fresh = new AudioCtx();
-            sharedAudioCtx = fresh;
-            fn(fresh);
-          } catch {}
-        });
-    } else {
-      fn(ctx);
+    if (win.__rdxAudioCtx.state === "suspended") {
+      win.__rdxAudioCtx.resume().catch(() => {});
     }
-  } catch {}
+    return win.__rdxAudioCtx;
+  } catch {
+    return null;
+  }
 }
 
 function playTone(
@@ -65,7 +55,7 @@ function playTone(
     osc.frequency.setValueAtTime(f1, t);
     osc.frequency.exponentialRampToValueAtTime(f2, t + dur);
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(peakGain, t + 0.004);
+    gain.gain.linearRampToValueAtTime(peakGain, t + 0.005);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     osc.connect(gain);
     gain.connect(ctx.destination);
@@ -101,9 +91,8 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
-  withActiveAudioContext((ctx) => {
-    playTone(ctx, 540, 280, 0.042, 0.24);
-  });
+  const ctx = getOrCreateAudioContext();
+  if (ctx) playTone(ctx, 540, 280, 0.06, 0.26);
 };
 
 /**
@@ -112,10 +101,11 @@ export const playHoverSound = () => {
 export const playModalOpenSound = () => {
   if (!uiSoundsEnabled) return;
 
-  withActiveAudioContext((ctx) => {
-    playTone(ctx, 300, 450, 0.19, 0.2);
-    playTone(ctx, 450, 675, 0.19, 0.14, 0.015);
-  });
+  const ctx = getOrCreateAudioContext();
+  if (ctx) {
+    playTone(ctx, 300, 450, 0.19, 0.22);
+    playTone(ctx, 450, 675, 0.19, 0.15, 0.015);
+  }
 };
 
 /**
@@ -124,9 +114,8 @@ export const playModalOpenSound = () => {
 export const playButtonClickSound = () => {
   if (!uiSoundsEnabled) return;
 
-  withActiveAudioContext((ctx) => {
-    playTone(ctx, 780, 360, 0.036, 0.24);
-  });
+  const ctx = getOrCreateAudioContext();
+  if (ctx) playTone(ctx, 780, 360, 0.045, 0.26);
 };
 
 /**
@@ -135,9 +124,8 @@ export const playButtonClickSound = () => {
 export const playBackSound = () => {
   if (!uiSoundsEnabled) return;
 
-  withActiveAudioContext((ctx) => {
-    playTone(ctx, 460, 200, 0.06, 0.2);
-  });
+  const ctx = getOrCreateAudioContext();
+  if (ctx) playTone(ctx, 460, 200, 0.065, 0.22);
 };
 
 /**

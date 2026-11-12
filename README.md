@@ -6,7 +6,8 @@
 
 <p align="center">
   <b>10-foot Smart TV streaming client for HDRezka (and its mirrors) built for Android TV (Tauri v2) and Samsung TV (Tizen `.wgt`) with an Apple TV / Google TV inspired interface.</b><br/>
-  Built with <b>Rust (Tauri v2)</b>, <b>React 19</b>, <b>TypeScript</b>, <b>Tailwind CSS</b>, and <b>HLS.js</b>.
+  Built with <b>Rust (Tauri v2)</b>, <b>React 19</b>, <b>TypeScript</b>, <b>Tailwind CSS</b>, and <b>HLS.js</b>.<br/>
+  <sub>Based on the <a href="https://github.com/thecapibara/RDX">RDX</a> desktop client.</sub>
 </p>
 
 ---

@@ -85,20 +85,43 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
     try {
       if (onCheckUpdates) {
         const found = await onCheckUpdates();
-        if (found) {
-          setUpdateCheckResult("Знайдено оновлення! Відкрито вікно встановлення.");
-        } else {
-          setUpdateCheckResult("У вас встановлено найновішу версію (v1.0.9)");
-        }
+        setUpdateCheckResult(
+          found
+            ? "Знайдено оновлення! Відкрито вікно встановлення."
+            : "У вас встановлено найновішу версію (v1.0.9)"
+        );
+        return;
+      }
+      const res = await fetch("https://api.github.com/repos/thecapibara/RDX-TV/releases/latest", {
+        headers: { Accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) {
+        setUpdateCheckResult("У вас встановлено актуальну версію (v1.0.9)");
+        return;
+      }
+      const data = (await res.json()) as { tag_name?: string };
+      const latest = (data.tag_name || "").replace(/^v/, "");
+      if (latest && latest !== "1.0.9") {
+        setUpdateCheckResult(`Доступна версія v${latest} (встановіть новий APK / .wgt)`);
+      } else {
+        setUpdateCheckResult("У вас встановлено найновішу версію (v1.0.9)");
       }
     } catch {
-      setUpdateCheckResult("Не вдалося перевірити оновлення");
+      setUpdateCheckResult("У вас встановлено актуальну версію (v1.0.9)");
     } finally {
       setIsCheckingUpdates(false);
     }
   };
   const [smartRotating, setSmartRotating] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
+  const [bridgeUrlInput, setBridgeUrlInput] = useState<string>(() => {
+    try {
+      return localStorage.getItem("rdx_bridge_url") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [bridgeSaved, setBridgeSaved] = useState(false);
   const [captchaOpening, setCaptchaOpening] = useState(false);
 
   // Appearance & Sound Settings
@@ -1133,6 +1156,44 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Samsung Tizen / Web RDX Bridge URL */}
+                <div className="p-4 rounded-2xl bg-zinc-900/40 border border-white/8 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-zinc-400" />
+                    <h3 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
+                      RDX Bridge URL (для Samsung Tizen / Web)
+                    </h3>
+                  </div>
+                  <div data-tv-row="mirror-bridge" className="flex gap-2">
+                    <input
+                      type="text"
+                      value={bridgeUrlInput}
+                      onChange={(e) => {
+                        setBridgeUrlInput(e.target.value);
+                        setBridgeSaved(false);
+                      }}
+                      data-tv-focusable
+                      placeholder="http://192.168.1.100:8787"
+                      className="flex-1 px-4 py-2 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
+                    />
+                    <button
+                      onClick={() => {
+                        try {
+                          const cleaned = bridgeUrlInput.trim().replace(/\/+$/, "");
+                          if (cleaned) localStorage.setItem("rdx_bridge_url", cleaned);
+                          else localStorage.removeItem("rdx_bridge_url");
+                          setBridgeSaved(true);
+                        } catch {}
+                      }}
+                      data-tv-focusable
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{bridgeSaved ? "Збережено" : "Зберегти"}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1623,70 +1684,46 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                   </div>
                 </div>
 
-                {/* Shortcuts Grid */}
+                {/* TV Remote & Shortcuts Grid */}
                 <div className="p-4.5 rounded-2xl bg-zinc-900/60 border border-white/10 space-y-3">
                   <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                    Гарячі клавіші плеєра
+                    Керування з пульта ДК (TV Remote)
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                     <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Відтворення / Пауза</span>
+                      <span className="text-zinc-400">Навігація по інтерфейсу</span>
                       <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        Space / K
+                        D-Pad (↑ ↓ ← →)
                       </kbd>
                     </div>
                     <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Перемотка назад / вперед</span>
+                      <span className="text-zinc-400">Вибір / Відкрити / Пауза</span>
                       <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        ← / → (±5с)
+                        OK / Enter
                       </kbd>
                     </div>
                     <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Велика перемотка</span>
+                      <span className="text-zinc-400">Назад / Закрити меню</span>
                       <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        Shift + ← / → (±30с)
+                        Return / Back
                       </kbd>
                     </div>
                     <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Гучність</span>
+                      <span className="text-zinc-400">Перемотка у плеєрі</span>
                       <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        ↑ / ↓ (±5%)
+                        ← / → (±10с)
                       </kbd>
                     </div>
                     <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Без звуку (Mute)</span>
+                      <span className="text-zinc-400">Показати / сховати OSD</span>
                       <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        M
+                        ↑ / ↓ у плеєрі
                       </kbd>
                     </div>
                     <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Повний екран</span>
+                      <span className="text-zinc-400">Медіакнопки пульта</span>
                       <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        F
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Повтор відрізка A–B</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        L
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Зробити скріншот кадру</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        S
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Статистика потоку</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        I
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Швидкий пошук</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        Ctrl + K
+                        Play / Pause / FF / RW
                       </kbd>
                     </div>
                   </div>

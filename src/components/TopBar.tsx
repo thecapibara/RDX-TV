@@ -113,16 +113,13 @@ export const TopBar: React.FC<TopBarProps> = ({
                   onTabChange(tab.id);
                 }}
                 className={cn(
-                  "relative px-2.5 py-1 rounded-xl text-xs sm:text-sm lg:text-[15px] tracking-wide transition-all duration-200 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white/10 focus:text-white",
+                  "relative px-3.5 py-1.5 rounded-full text-xs sm:text-sm lg:text-[15px] tracking-wide transition-all duration-200 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-rose-600 focus:text-white",
                   isActive
-                    ? "text-white font-semibold"
+                    ? "bg-white/12 text-white font-semibold"
                     : "text-zinc-400 font-medium hover:text-zinc-100"
                 )}
               >
                 <span>{tab.label}</span>
-                {isActive && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-500 rounded-full transition-all" />
-                )}
               </button>
             );
           })}

@@ -2,27 +2,23 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   X,
   Server,
-  ShieldCheck,
   Plus,
   RefreshCw,
-  ExternalLink,
   Check,
   Loader2,
-  Zap,
   Shield,
   Shuffle,
   Trash2,
   Film,
   Info,
   Crown,
-  Sparkles,
   Volume2,
   Sliders,
-  Monitor,
-  Eye,
   Palette,
   Moon,
   Globe,
+  Play,
+  Sparkles,
 } from "lucide-react";
 import type { AppSettings, MirrorStatus } from "../types";
 import { api } from "../services/api";
@@ -30,8 +26,7 @@ import { cn } from "../lib/utils";
 import {
   getUiSoundsEnabled,
   setUiSoundsEnabled,
-  playModalOpenSound,
-  playHoverSound,
+  playButtonClickSound,
 } from "../services/sound";
 import {
   getAccentColor,
@@ -51,14 +46,71 @@ interface MirrorModalProps {
   onCheckUpdates?: () => Promise<boolean> | boolean | void;
 }
 
+const APP_VERSION = "1.1.1";
+
 const PRESET_MIRRORS = [
+  "https://rezka-tv.org",
   "https://hdrezka.me",
   "https://hdrezka.kim",
   "https://rezka.pub",
   "https://rezka.ag",
   "https://hdrezka.sh",
-  "https://rezka-tv.org",
 ];
+
+const QUALITY_OPTIONS = [
+  { id: "1080p Ultra", label: "1080p Ultra", premium: true },
+  { id: "1080p", label: "1080p", premium: false },
+  { id: "720p", label: "720p", premium: false },
+  { id: "480p", label: "480p", premium: false },
+  { id: "360p", label: "360p", premium: false },
+];
+
+const TRANSLATOR_OPTIONS = [
+  { id: "", label: "Авто (Українська пріоритет)" },
+  { id: "Цікава Ідея", label: "Цікава Ідея 🇺🇦" },
+  { id: "НеЗупиняйСкорочення", label: "НеЗупиняйСкорочення 🇺🇦" },
+  { id: "DniproFilm", label: "DniproFilm 🇺🇦" },
+  { id: "Original", label: "Оригінал (EN)" },
+];
+
+const TvSwitch: React.FC<{
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+}> = ({ checked, onToggle, label, description, icon }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    data-tv-focusable
+    onClick={() => {
+      playButtonClickSound();
+      onToggle();
+    }}
+    className="w-full flex items-center justify-between gap-6 p-5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500 focus:bg-white/[0.1]"
+  >
+    <div className="flex items-center gap-4 min-w-0">
+      <div className="w-11 h-11 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 shrink-0">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="text-base font-bold text-white">{label}</div>
+        <div className="text-sm text-zinc-400 mt-0.5 leading-snug">{description}</div>
+      </div>
+    </div>
+
+    <div
+      className={cn(
+        "w-14 h-8 rounded-full p-1 transition-colors shrink-0 flex items-center",
+        checked ? "bg-rose-600 justify-end" : "bg-zinc-700 justify-start"
+      )}
+    >
+      <div className="w-6 h-6 rounded-full bg-white shadow-md" />
+    </div>
+  </button>
+);
 
 export const MirrorModal: React.FC<MirrorModalProps> = ({
   isOpen,
@@ -67,56 +119,20 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
   onCheckUpdates,
 }) => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [activeModalTab, setActiveModalTab] = useState<
-    "network" | "playback" | "appearance" | "about"
-  >("network");
+  const [activeTab, setActiveTab] = useState<"network" | "playback" | "appearance" | "about">(
+    "network"
+  );
   const [preferredQuality, setPreferredQuality] = useState<string>("720p");
   const [preferredTranslator, setPreferredTranslator] = useState<string>("");
   const [customInput, setCustomInput] = useState("");
   const [proxyInput, setProxyInput] = useState("");
   const [testingStatus, setTestingStatus] = useState<Record<string, MirrorStatus>>({});
   const [testing, setTesting] = useState(false);
+  const [smartRotating, setSmartRotating] = useState(false);
+  const [savingProxy, setSavingProxy] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [updateCheckResult, setUpdateCheckResult] = useState<string | null>(null);
 
-  const handleManualUpdateCheck = async () => {
-    setIsCheckingUpdates(true);
-    setUpdateCheckResult(null);
-    try {
-      if (onCheckUpdates) {
-        const found = await onCheckUpdates();
-        setUpdateCheckResult(
-          found
-            ? "Знайдено оновлення! Відкрито вікно встановлення."
-            : "У вас встановлено найновішу версію (v1.0.9)"
-        );
-        return;
-      }
-      const res = await fetch("https://api.github.com/repos/thecapibara/RDX-TV/releases/latest", {
-        headers: { Accept: "application/vnd.github+json" },
-      });
-      if (!res.ok) {
-        setUpdateCheckResult("У вас встановлено актуальну версію (v1.0.9)");
-        return;
-      }
-      const data = (await res.json()) as { tag_name?: string };
-      const latest = (data.tag_name || "").replace(/^v/, "");
-      if (latest && latest !== "1.0.9") {
-        setUpdateCheckResult(`Доступна версія v${latest} (встановіть новий APK / .wgt)`);
-      } else {
-        setUpdateCheckResult("У вас встановлено найновішу версію (v1.0.9)");
-      }
-    } catch {
-      setUpdateCheckResult("У вас встановлено актуальну версію (v1.0.9)");
-    } finally {
-      setIsCheckingUpdates(false);
-    }
-  };
-  const [smartRotating, setSmartRotating] = useState(false);
-  const [savingProxy, setSavingProxy] = useState(false);
-  const [captchaOpening, setCaptchaOpening] = useState(false);
-
-  // Appearance & Sound Settings
   const [mirrorAutopilot, setMirrorAutopilot] = useState<boolean>(() => {
     try {
       return localStorage.getItem("rdx_mirror_autopilot") !== "false";
@@ -124,14 +140,6 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
       return true;
     }
   });
-
-  const handleToggleMirrorAutopilot = (enabled: boolean) => {
-    setMirrorAutopilot(enabled);
-    try {
-      localStorage.setItem("rdx_mirror_autopilot", enabled ? "true" : "false");
-    } catch {}
-  };
-
   const [autoplayNext, setAutoplayNext] = useState<boolean>(() => {
     try {
       return localStorage.getItem("rdx_autoplay_next") !== "false";
@@ -146,23 +154,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
       return true;
     }
   });
-  const [ambientGlow, setAmbientGlow] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("rdx_ambient_glow") !== "false";
-    } catch {
-      return true;
-    }
-  });
-  const [uiSounds, setUiSounds] = useState<boolean>(() => {
-    return getUiSoundsEnabled();
-  });
-  const [motion60fps, setMotion60fps] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("rdx_motion_60fps") !== "false";
-    } catch {
-      return true;
-    }
-  });
+  const [uiSounds, setUiSounds] = useState<boolean>(() => getUiSoundsEnabled());
   const [accentColor, setAccentColorState] = useState<AccentColor>(() => getAccentColor());
   const [bgTheme, setBgThemeState] = useState<BgTheme>(() => getBgTheme());
 
@@ -170,1523 +162,785 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    const t = setTimeout(() => {
-      focusFirstInScope();
-    }, 50);
-    return () => clearTimeout(t);
-  }, [isOpen]);
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
+    api
+      .getSettings()
+      .then((s) => {
+        setSettings(s);
+        setProxyInput(s.proxy_url || "");
+        setPreferredQuality(s.preferred_quality || "720p");
+        setPreferredTranslator(s.preferred_translator || "");
+        if (s.startup_sound !== undefined) setStartupSound(s.startup_sound);
+        if (s.autoplay_next !== undefined) setAutoplayNext(s.autoplay_next);
+      })
+      .catch(() => {});
+
+    const t = setTimeout(() => focusFirstInScope(), 60);
+    return () => {
+      clearTimeout(t);
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
-
-  useEffect(() => {
-    if (isOpen) {
-      loadAndProbeAll();
-
-      // Lock background document scrolling while modal is open
-      const prevBodyOverflow = document.body.style.overflow;
-      const prevHtmlOverflow = document.documentElement.style.overflow;
-      document.body.style.overflow = "hidden";
-      document.documentElement.style.overflow = "hidden";
-
-      return () => {
-        document.body.style.overflow = prevBodyOverflow;
-        document.documentElement.style.overflow = prevHtmlOverflow;
-      };
-    }
   }, [isOpen]);
 
-  const loadAndProbeAll = async () => {
-    try {
-      const s = await api.getSettings();
-      setSettings(s);
-      setProxyInput(s.proxy_url || "");
-      setPreferredQuality(s.preferred_quality || "720p");
-      setPreferredTranslator(s.preferred_translator || "");
-      if (s.startup_sound !== undefined) {
-        setStartupSound(s.startup_sound);
-      }
-      const isAutoNext = s.autoplay_next !== false;
-      setAutoplayNext(isAutoNext);
-      try {
-        localStorage.setItem("rdx_autoplay_next", String(isAutoNext));
-      } catch {}
-
-      const urls = Array.from(
-        new Set([
-          s.active_mirror,
-          ...PRESET_MIRRORS,
-          ...(s.custom_mirrors || []).filter(
-            (m) => m !== "https://hdrezka.ac" && m !== "https://hdrezka.ag"
-          ),
-        ])
-      );
-
-      setTesting(true);
-      const statuses = await api.checkAllMirrors(urls);
-      const map: Record<string, MirrorStatus> = {};
-      for (const st of statuses) {
-        map[st.mirror_url] = st;
-      }
-      setTestingStatus((prev) => ({ ...prev, ...map }));
-    } catch (err) {
-      console.error("Failed to load settings or probe mirrors:", err);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const testMirror = async (url: string) => {
-    try {
-      const status = await api.checkMirrorStatus(url);
-      setTestingStatus((prev) => ({ ...prev, [url]: status }));
-      return status;
-    } catch (err) {
-      console.error("Test mirror failed:", err);
-      return null;
-    }
-  };
+  const allMirrors = useMemo(() => {
+    const base = new Set(PRESET_MIRRORS);
+    if (settings?.active_mirror) base.add(settings.active_mirror);
+    settings?.custom_mirrors?.forEach((m) => base.add(m));
+    return Array.from(base);
+  }, [settings]);
 
   const handleTestAll = async () => {
-    if (!settings) return;
     setTesting(true);
     try {
-      const allUrls = Array.from(
-        new Set([
-          settings.active_mirror,
-          ...PRESET_MIRRORS,
-          ...settings.custom_mirrors.filter(
-            (m) => m !== "https://hdrezka.ac" && m !== "https://hdrezka.ag"
-          ),
-        ])
-      );
-      const statuses = await api.checkAllMirrors(allUrls);
+      const results = await api.checkAllMirrors(allMirrors);
       const map: Record<string, MirrorStatus> = {};
-      for (const st of statuses) {
-        map[st.mirror_url] = st;
-      }
-      setTestingStatus((prev) => ({ ...prev, ...map }));
-    } catch (err) {
-      console.error("Parallel mirror check failed:", err);
+      results.forEach((r) => {
+        map[r.mirror_url] = r;
+      });
+      setTestingStatus(map);
+    } catch (e) {
+      console.error(e);
     } finally {
       setTesting(false);
     }
   };
 
-  const handleSmartSelect = async (forceRotate = false) => {
+  const handleSmartRotate = async () => {
     setSmartRotating(true);
     try {
-      const res = await api.smartSelectMirror(forceRotate);
+      const res = await api.smartSelectMirror(true);
       const map: Record<string, MirrorStatus> = {};
-      for (const st of res.statuses) {
-        map[st.mirror_url] = st;
+      res.statuses.forEach((r) => {
+        map[r.mirror_url] = r;
+      });
+      setTestingStatus(map);
+      if (settings) {
+        setSettings({ ...settings, active_mirror: res.selected_mirror });
       }
-      setTestingStatus((prev) => ({ ...prev, ...map }));
-
-      const updated = await api.getSettings();
-      setSettings(updated);
-
-      if (res.selected_mirror) {
-        onMirrorChanged(res.selected_mirror);
-      }
-    } catch (err) {
-      console.error("Smart mirror rotation failed:", err);
+      onMirrorChanged(res.selected_mirror);
+    } catch (e) {
+      console.error(e);
     } finally {
       setSmartRotating(false);
     }
   };
 
-  const handleSelectMirror = async (mirrorUrl: string) => {
-    try {
-      await api.setActiveMirror(mirrorUrl);
-      setSettings((prev) => (prev ? { ...prev, active_mirror: mirrorUrl } : null));
-      onMirrorChanged(mirrorUrl);
-    } catch (err) {
-      console.error("Failed to set active mirror:", err);
-    }
+  const handleSelectMirror = async (url: string) => {
+    await api.setActiveMirror(url);
+    if (settings) setSettings({ ...settings, active_mirror: url });
+    onMirrorChanged(url);
   };
 
   const handleAddCustomMirror = async () => {
-    if (!customInput.trim() || !settings) return;
-    let url = customInput.trim();
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      url = "https://" + url;
-    }
-    url = url.replace(/\/+$/, "");
-
-    const updatedCustom = Array.from(new Set([...settings.custom_mirrors, url]));
-    const updatedSettings: AppSettings = {
-      ...settings,
-      custom_mirrors: updatedCustom,
-    };
-
-    try {
-      await api.updateSettings(updatedSettings);
-      setSettings(updatedSettings);
-      setCustomInput("");
-      testMirror(url);
-    } catch (err) {
-      console.error("Failed to add custom mirror:", err);
-    }
+    const trimmed = customInput.trim().replace(/\/+$/, "");
+    if (!trimmed || !settings) return;
+    const normalized = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+    const updatedCustom = Array.from(new Set([...(settings.custom_mirrors || []), normalized]));
+    const next = { ...settings, custom_mirrors: updatedCustom, active_mirror: normalized };
+    await api.updateSettings(next);
+    setSettings(next);
+    setCustomInput("");
+    onMirrorChanged(normalized);
   };
 
-  const handleRemoveCustomMirror = async (urlToRemove: string) => {
+  const handleRemoveCustomMirror = async (url: string) => {
     if (!settings) return;
-    const updatedCustom = settings.custom_mirrors.filter((u) => u !== urlToRemove);
-    const updatedSettings: AppSettings = {
-      ...settings,
-      custom_mirrors: updatedCustom,
-    };
-    try {
-      await api.updateSettings(updatedSettings);
-      setSettings(updatedSettings);
-    } catch (err) {
-      console.error("Failed to remove custom mirror:", err);
-    }
+    const updatedCustom = (settings.custom_mirrors || []).filter((m) => m !== url);
+    const nextActive =
+      settings.active_mirror === url ? PRESET_MIRRORS[0] : settings.active_mirror;
+    const next = { ...settings, custom_mirrors: updatedCustom, active_mirror: nextActive };
+    await api.updateSettings(next);
+    setSettings(next);
+    if (nextActive !== settings.active_mirror) onMirrorChanged(nextActive);
   };
 
   const handleSaveProxy = async () => {
     if (!settings) return;
     setSavingProxy(true);
-    const updatedSettings: AppSettings = {
-      ...settings,
-      proxy_url: proxyInput.trim(),
-    };
     try {
-      await api.updateSettings(updatedSettings);
-      setSettings(updatedSettings);
-    } catch (err) {
-      console.error("Failed to save proxy:", err);
+      const next = { ...settings, proxy_url: proxyInput.trim() };
+      await api.updateSettings(next);
+      setSettings(next);
     } finally {
       setSavingProxy(false);
     }
   };
 
-  const handleOpenCaptcha = async () => {
-    setCaptchaOpening(true);
-    try {
-      await api.openCaptchaWindow(settings?.active_mirror);
-    } catch (err) {
-      console.error("Failed to open captcha window:", err);
-    } finally {
-      setCaptchaOpening(false);
-    }
-  };
-
-  const handleSelectDefaultQuality = async (q: string) => {
-    if (!settings) return;
+  const handleQualityChange = async (q: string) => {
     setPreferredQuality(q);
     try {
       localStorage.setItem("rdx_preferred_quality", q);
     } catch {}
-    const updatedSettings: AppSettings = { ...settings, preferred_quality: q };
-    setSettings(updatedSettings);
-    await api.updateSettings(updatedSettings).catch(console.warn);
+    if (settings) {
+      const next = { ...settings, preferred_quality: q };
+      setSettings(next);
+      await api.updateSettings(next).catch(() => {});
+    }
   };
 
-  const handleSaveTranslator = async (t: string) => {
-    if (!settings) return;
+  const handleTranslatorChange = async (t: string) => {
     setPreferredTranslator(t);
-    const updatedSettings: AppSettings = { ...settings, preferred_translator: t.trim() };
-    setSettings(updatedSettings);
-    await api.updateSettings(updatedSettings).catch(console.warn);
-  };
-
-  const handleToggleStartupSound = async (enabled: boolean) => {
-    setStartupSound(enabled);
     try {
-      localStorage.setItem("rdx_startup_sound", enabled ? "true" : "false");
+      localStorage.setItem("rdx_preferred_translator", t);
     } catch {}
     if (settings) {
-      const updatedSettings: AppSettings = { ...settings, startup_sound: enabled };
-      setSettings(updatedSettings);
-      await api.updateSettings(updatedSettings).catch(console.warn);
+      const next = { ...settings, preferred_translator: t };
+      setSettings(next);
+      await api.updateSettings(next).catch(() => {});
     }
   };
 
-  const handleToggleAutoplayNext = async (enabled: boolean) => {
-    setAutoplayNext(enabled);
+  const handleManualUpdateCheck = async () => {
+    setIsCheckingUpdates(true);
+    setUpdateCheckResult(null);
     try {
-      localStorage.setItem("rdx_autoplay_next", String(enabled));
-    } catch {}
-    if (settings) {
-      const updatedSettings: AppSettings = { ...settings, autoplay_next: enabled };
-      setSettings(updatedSettings);
-      await api.updateSettings(updatedSettings).catch(console.warn);
-    }
-  };
-
-  const handleToggleUiSounds = (enabled: boolean) => {
-    setUiSounds(enabled);
-    setUiSoundsEnabled(enabled);
-    if (enabled) {
-      playModalOpenSound();
-    }
-  };
-
-  const handleToggleAmbientGlow = (enabled: boolean) => {
-    setAmbientGlow(enabled);
-    try {
-      localStorage.setItem("rdx_ambient_glow", enabled ? "true" : "false");
-    } catch {}
-  };
-
-  const handleToggleMotion60fps = (enabled: boolean) => {
-    setMotion60fps(enabled);
-    try {
-      localStorage.setItem("rdx_motion_60fps", enabled ? "true" : "false");
-    } catch {}
-  };
-
-  const handleSelectAccent = (color: AccentColor) => {
-    setAccentColorState(color);
-    setAccentColor(color);
-    playHoverSound();
-  };
-
-  const handleSelectBgTheme = (theme: BgTheme) => {
-    setBgThemeState(theme);
-    setBgTheme(theme);
-    playHoverSound();
-  };
-
-  const allMirrors = useMemo(() => {
-    const raw = Array.from(
-      new Set([
-        ...(settings?.active_mirror ? [settings.active_mirror] : []),
-        ...PRESET_MIRRORS,
-        ...(settings?.custom_mirrors || []).filter(
-          (m) => m !== "https://hdrezka.ac" && m !== "https://hdrezka.ag"
-        ),
-      ])
-    );
-
-    return raw.sort((a, b) => {
-      if (a === settings?.active_mirror) return -1;
-      if (b === settings?.active_mirror) return 1;
-      const sa = testingStatus[a];
-      const sb = testingStatus[b];
-
-      // Working mirrors first
-      if (sa?.online && !sb?.online) return -1;
-      if (!sa?.online && sb?.online) return 1;
-
-      if (sa?.online && sb?.online) {
-        // Highest health_score first
-        const scoreA = sa.health_score ?? (sa.stream_available ? 90 : 70);
-        const scoreB = sb.health_score ?? (sb.stream_available ? 90 : 70);
-        if (scoreB !== scoreA) {
-          return scoreB - scoreA;
-        }
-        // Then stream_available
-        if (sa.stream_available && !sb.stream_available) return -1;
-        if (!sa.stream_available && sb.stream_available) return 1;
-        // Then lowest latency
-        return (sa.latency_ms || 9999) - (sb.latency_ms || 9999);
+      if (onCheckUpdates) {
+        const found = await onCheckUpdates();
+        setUpdateCheckResult(
+          found
+            ? "Знайдено нову версію!"
+            : `У вас найновіша версія (v${APP_VERSION})`
+        );
+        return;
       }
-      return 0;
-    });
-  }, [settings, testingStatus]);
-
-  const recommendedMirrorUrl = useMemo(() => {
-    let bestUrl: string | null = null;
-    let bestScore = -1;
-    let bestLatency = Infinity;
-
-    for (const [url, st] of Object.entries(testingStatus)) {
-      if (!st.online) continue;
-      const score = typeof st.health_score === "number" ? st.health_score : (st.stream_available ? 90 : 60);
-      if (score > bestScore) {
-        bestScore = score;
-        bestLatency = st.latency_ms > 0 ? st.latency_ms : Infinity;
-        bestUrl = url;
-      } else if (score === bestScore) {
-        if (st.latency_ms > 0 && st.latency_ms < bestLatency) {
-          bestLatency = st.latency_ms;
-          bestUrl = url;
-        }
+      const res = await fetch("https://api.github.com/repos/thecapibara/RDX-TV/releases/latest", {
+        headers: { Accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) {
+        setUpdateCheckResult(`Актуальна версія (v${APP_VERSION})`);
+        return;
       }
+      const data = (await res.json()) as { tag_name?: string };
+      const latest = (data.tag_name || "").replace(/^v/, "");
+      if (latest && latest !== APP_VERSION) {
+        setUpdateCheckResult(`Доступна версія v${latest} на GitHub Releases`);
+      } else {
+        setUpdateCheckResult(`У вас найновіша версія (v${APP_VERSION})`);
+      }
+    } catch {
+      setUpdateCheckResult(`Актуальна версія (v${APP_VERSION})`);
+    } finally {
+      setIsCheckingUpdates(false);
     }
-    return bestUrl;
-  }, [testingStatus]);
+  };
 
   if (!isOpen) return null;
 
+  const navItems: Array<{
+    id: "network" | "playback" | "appearance" | "about";
+    label: string;
+    icon: React.ReactNode;
+  }> = [
+    { id: "network", label: "Мережа та дзеркала", icon: <Globe className="w-5 h-5" /> },
+    { id: "playback", label: "Відтворення", icon: <Play className="w-5 h-5" /> },
+    { id: "appearance", label: "Вигляд і звук", icon: <Palette className="w-5 h-5" /> },
+    { id: "about", label: "Про RDX-TV", icon: <Info className="w-5 h-5" /> },
+  ];
+
   return (
     <div
-      onClick={onClose}
-      onWheel={(e) => e.stopPropagation()}
       data-modal-open="true"
       data-tv-scope="modal"
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-hidden select-none"
+      className="fixed inset-0 z-50 bg-[#070709]/98 flex text-white select-none"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl bg-[var(--bg-surface,#161720)] border border-[var(--border-subtle,rgba(255,255,255,0.1))] rounded-3xl shadow-2xl shadow-black/90 overflow-hidden flex flex-col max-h-[88vh] backdrop-blur-2xl transition-colors duration-250"
-      >
-        {/* Obsidian Glass Header */}
-        <div className="flex items-center justify-between px-6 py-4.5 border-b border-[var(--border-subtle,rgba(255,255,255,0.08))] bg-[var(--bg-elevated,#1e1f2b)]/80 transition-colors duration-250">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-600 to-rose-950 border border-rose-500/30 flex items-center justify-center text-white shadow-lg shadow-rose-950/50 flex-shrink-0">
-              <span className="font-black text-xs tracking-tighter">RDX-TV</span>
-            </div>
-            <div>
+      {/* Left 10-foot Android TV Sidebar */}
+      <aside className="w-72 lg:w-80 bg-zinc-950/90 border-r border-white/10 p-6 flex flex-col justify-between shrink-0">
+        <div className="space-y-8">
+          {/* Brand Header */}
+          <div className="flex items-center gap-3.5 px-2">
+            <img
+              src="/icon-tv.png"
+              alt="RDX-TV"
+              className="w-11 h-11 rounded-2xl object-contain shrink-0"
+            />
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black text-white tracking-tight flex items-baseline">
-                  Налаштування RDX-TV<span className="text-rose-500 text-lg leading-none">.</span>
-                </h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/5 border border-white/10 text-zinc-400">
-                  v1.0.9
+                <span className="text-xl font-black tracking-tight text-white">
+                  RDX-TV<span className="text-rose-500">.</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-white/10 text-[11px] font-mono font-semibold text-zinc-300">
+                  v{APP_VERSION}
                 </span>
               </div>
-              <p className="text-xs text-zinc-400">
-                Дзеркала HDRezka, DoH-обхід, відтворення, вигляд та гарячі клавіші
-              </p>
+              <p className="text-xs text-zinc-400 mt-0.5">Налаштування телевізора</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            data-tv-focusable
-            className="p-2.5 rounded-full bg-white/5 hover:bg-white/12 text-zinc-400 hover:text-white transition-all cursor-pointer border border-white/5 hover:border-white/15 focus:outline-none focus:ring-4 focus:ring-rose-500"
-            title="Закрити налаштування (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          {/* Vertical D-Pad Navigation Categories */}
+          <nav className="space-y-2">
+            {navItems.map((item) => {
+              const active = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-tv-focusable
+                  data-tv-autofocus={active ? "true" : undefined}
+                  onClick={() => {
+                    playButtonClickSound();
+                    setActiveTab(item.id);
+                  }}
+                  className={cn(
+                    "w-full flex items-center gap-3.5 px-4 py-4 rounded-2xl text-left text-base font-bold transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                    active
+                      ? "bg-rose-600 text-white shadow-lg shadow-rose-600/25"
+                      : "bg-white/[0.03] text-zinc-300 hover:bg-white/[0.08] hover:text-white"
+                  )}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* 2-Column TV Layout: Sidebar + Main Content */}
-        <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-          {/* Left Navigation Rail */}
-          <div
-            data-tv-row="mirror-tabs"
-            className="w-full md:w-60 border-b md:border-b-0 md:border-r border-[var(--border-subtle,rgba(255,255,255,0.08))] bg-[var(--bg-base,#101116)]/70 p-3 space-y-1.5 flex-shrink-0 flex md:flex-col overflow-x-auto md:overflow-x-visible transition-colors duration-250"
-          >
-            {/* Tab 1: Network & Mirrors */}
-            <button
-              onClick={() => setActiveModalTab("network")}
-              data-tv-focusable
-              data-tv-autofocus
-              className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
-                activeModalTab === "network"
-                  ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
-              )}
-            >
-              <div
-                className={cn(
-                  "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
-                  activeModalTab === "network"
-                    ? "bg-rose-500/20 text-rose-400"
-                    : "bg-white/5 text-zinc-400"
-                )}
-              >
-                <Server className="w-4 h-4" />
-              </div>
-              <div className="hidden md:block">
-                <div className="text-xs font-bold leading-tight">Мережа та Дзеркала</div>
-                <div className="text-[10px] text-zinc-500 font-normal mt-0.5">DoH, кластери, проксі</div>
-              </div>
-              <span className="md:hidden text-xs font-bold">Мережа</span>
-            </button>
+        {/* Bottom Close Action */}
+        <button
+          type="button"
+          data-tv-focusable
+          onClick={() => {
+            playButtonClickSound();
+            onClose();
+          }}
+          className="w-full flex items-center justify-center gap-2.5 px-4 py-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-zinc-200 font-bold text-sm transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
+        >
+          <X className="w-5 h-5" />
+          <span>Закрити (Back)</span>
+        </button>
+      </aside>
 
-            {/* Tab 2: Playback */}
-            <button
-              onClick={() => setActiveModalTab("playback")}
-              data-tv-focusable
-              className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
-                activeModalTab === "playback"
-                  ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
-              )}
-            >
-              <div
-                className={cn(
-                  "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
-                  activeModalTab === "playback"
-                    ? "bg-rose-500/20 text-rose-400"
-                    : "bg-white/5 text-zinc-400"
-                )}
-              >
-                <Film className="w-4 h-4" />
+      {/* Right Spacious TV Content Pane */}
+      <main className="flex-1 overflow-y-auto p-8 lg:p-12">
+        <div className="max-w-3xl space-y-6">
+          {/* ================= TAB 1: NETWORK & MIRRORS ================= */}
+          {activeTab === "network" && (
+            <>
+              <div>
+                <h2 className="text-2xl font-black text-white">Мережа та дзеркала HDRezka</h2>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Оберіть активне дзеркало або запустіть автоматичний пошук найшвидшого сервера.
+                </p>
               </div>
-              <div className="hidden md:block">
-                <div className="text-xs font-bold leading-tight">Відтворення</div>
-                <div className="text-[10px] text-zinc-500 font-normal mt-0.5">Якість, озвучка, буфер</div>
-              </div>
-              <span className="md:hidden text-xs font-bold">Відтворення</span>
-            </button>
 
-            {/* Tab 3: Appearance & Sound (NEW) */}
-            <button
-              onClick={() => setActiveModalTab("appearance")}
-              data-tv-focusable
-              className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
-                activeModalTab === "appearance"
-                  ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
-              )}
-            >
-              <div
-                className={cn(
-                  "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
-                  activeModalTab === "appearance"
-                    ? "bg-rose-500/20 text-rose-400"
-                    : "bg-white/5 text-zinc-400"
-                )}
-              >
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div className="hidden md:block">
-                <div className="text-xs font-bold leading-tight">Вигляд та Звук</div>
-                <div className="text-[10px] text-zinc-500 font-normal mt-0.5">Заставка, заставки, анімації</div>
-              </div>
-              <span className="md:hidden text-xs font-bold">Вигляд</span>
-            </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  data-tv-focusable
+                  disabled={smartRotating}
+                  onClick={() => {
+                    playButtonClickSound();
+                    handleSmartRotate();
+                  }}
+                  className="flex items-center gap-2.5 px-5 py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm transition-all cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-400"
+                >
+                  {smartRotating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Shuffle className="w-4 h-4" />
+                  )}
+                  <span>Розумний підбір дзеркала</span>
+                </button>
 
-            {/* Tab 4: About & Shortcuts */}
-            <button
-              onClick={() => setActiveModalTab("about")}
-              data-tv-focusable
-              className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all cursor-pointer flex-shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500",
-                activeModalTab === "about"
-                  ? "bg-rose-600/15 text-white border-l-2 border-rose-500 shadow-inner font-bold"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 font-medium"
-              )}
-            >
-              <div
-                className={cn(
-                  "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
-                  activeModalTab === "about"
-                    ? "bg-rose-500/20 text-rose-400"
-                    : "bg-white/5 text-zinc-400"
-                )}
-              >
-                <Info className="w-4 h-4" />
+                <button
+                  type="button"
+                  data-tv-focusable
+                  disabled={testing}
+                  onClick={() => {
+                    playButtonClickSound();
+                    handleTestAll();
+                  }}
+                  className="flex items-center gap-2.5 px-5 py-3.5 rounded-2xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-white font-bold text-sm transition-all cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-500"
+                >
+                  {testing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  <span>Перевірити всі</span>
+                </button>
               </div>
-              <div className="hidden md:block">
-                <div className="text-xs font-bold leading-tight">Про програму</div>
-                <div className="text-[10px] text-zinc-500 font-normal mt-0.5">Гарячі клавіші • justgl</div>
-              </div>
-              <span className="md:hidden text-xs font-bold">Про нас</span>
-            </button>
-          </div>
 
-          {/* Right Content Pane */}
-          <div className="flex-1 p-5 sm:p-6 overflow-y-auto space-y-6">
-            {/* ================= TAB 1: NETWORK & MIRRORS ================= */}
-            {activeModalTab === "network" && (
-              <div className="space-y-6">
-                {/* 1. Active Node Diagnostic Dashboard Card */}
-                {(() => {
-                  const activeUrl = settings?.active_mirror || "";
-                  const activeSt = testingStatus[activeUrl];
-                  const activeScore = activeSt
-                    ? (activeSt.health_score ?? (activeSt.online ? 85 : 0))
-                    : null;
+              <TvSwitch
+                checked={mirrorAutopilot}
+                onToggle={() => {
+                  const next = !mirrorAutopilot;
+                  setMirrorAutopilot(next);
+                  try {
+                    localStorage.setItem("rdx_mirror_autopilot", next ? "true" : "false");
+                  } catch {}
+                }}
+                label="Авторотація дзеркал"
+                description="Автоматично перемикатись на робоче дзеркало при збої або блокуванні"
+                icon={<Sparkles className="w-5 h-5" />}
+              />
 
+              {/* Mirror List */}
+              <div className="space-y-2.5">
+                <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
+                  Доступні дзеркала
+                </div>
+                {allMirrors.map((mirror) => {
+                  const isActive = settings?.active_mirror === mirror;
+                  const status = testingStatus[mirror];
+                  const isCustom = !PRESET_MIRRORS.includes(mirror);
                   return (
-                    <div className="p-4.5 rounded-2xl bg-gradient-to-br from-zinc-900/90 via-zinc-900/60 to-zinc-950 border border-white/10 shadow-xl shadow-black/40 space-y-3.5">
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0">
-                            <Server className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                                Активний вузол кластера
-                              </span>
-                              <span
-                                className={cn(
-                                  "w-2 h-2 rounded-full",
-                                  activeSt?.online
-                                    ? "bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400"
-                                    : activeSt
-                                    ? "bg-rose-500"
-                                    : "bg-zinc-600"
-                                )}
-                              />
-                            </div>
-                            <div className="text-sm font-mono font-bold text-white truncate">
-                              {activeUrl || "Завантаження..."}
-                            </div>
-                          </div>
-                        </div>
-
-                        {activeScore !== null ? (
-                          <span
-                            className={cn(
-                              "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-mono border tracking-wide",
-                              activeScore >= 80
-                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-sm shadow-emerald-950/40"
-                                : activeScore >= 50
-                                ? "bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-sm shadow-amber-950/40"
-                                : "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-sm shadow-rose-950/40"
-                            )}
-                          >
-                            <Crown className="w-3.5 h-3.5" />
-                            {activeScore}% Здоров'я
-                          </span>
-                        ) : (
-                          <span className="px-3 py-1 rounded-full text-xs font-bold font-mono border bg-white/5 border-white/10 text-zinc-400">
-                            {testing ? "Тестування..." : "—"}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* 4 Diagnostic Pills in a responsive grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                        {/* 1. Пінг вузла */}
-                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex flex-col justify-between min-h-[68px]">
-                          <div className="text-[10px] font-medium text-zinc-400 truncate whitespace-nowrap">Пінг вузла</div>
-                          <div
-                            className={cn(
-                              "text-xs font-bold font-mono truncate whitespace-nowrap",
-                              activeSt?.online
-                                ? activeSt.latency_ms < 350
-                                  ? "text-emerald-400"
-                                  : activeSt.latency_ms < 700
-                                  ? "text-amber-400"
-                                  : "text-rose-400"
-                                : activeSt
-                                ? "text-rose-400"
-                                : "text-zinc-400"
-                            )}
-                          >
-                            {activeSt ? `${activeSt.latency_ms} мс` : testing ? "Перевірка..." : "—"}
-                          </div>
-                        </div>
-
-                        {/* 2. Відеопотоки */}
-                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex flex-col justify-between min-h-[68px]">
-                          <div className="text-[10px] font-medium text-zinc-400 truncate whitespace-nowrap">Відеопотоки</div>
-                          <div
-                            className={cn(
-                              "text-xs font-bold truncate whitespace-nowrap",
-                              activeSt?.stream_available
-                                ? "text-emerald-400"
-                                : activeSt?.online
-                                ? "text-amber-400"
-                                : "text-zinc-400"
-                            )}
-                          >
-                            {activeSt
-                              ? activeSt.stream_available
-                                ? `Потік OK${activeSt.stream_latency_ms ? ` • ${activeSt.stream_latency_ms} мс` : ""}`
-                                : activeSt.online
-                                ? "Лише каталог"
-                                : "Недоступно"
-                              : testing
-                              ? "Перевірка..."
-                              : "Невідомо"}
-                          </div>
-                        </div>
-
-                        {/* 3. Маршрут */}
-                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex flex-col justify-between min-h-[68px]">
-                          <div className="text-[10px] font-medium text-zinc-400 truncate whitespace-nowrap">Маршрут</div>
-                          <div className="text-xs font-bold text-cyan-300 font-mono truncate whitespace-nowrap">
-                            {activeSt
-                              ? activeSt.protection_type || (activeSt.doh_bypass ? "DoH + TLS" : "Пряме TLS")
-                              : "DoH + TLS"}
-                          </div>
-                        </div>
-
-                        {/* 4. Автопілот */}
-                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex flex-col justify-between min-h-[68px]">
-                          <div className="text-[10px] font-medium text-zinc-400 truncate whitespace-nowrap">Автопілот</div>
-                          <div
-                            className={cn(
-                              "text-xs font-bold truncate whitespace-nowrap flex items-center gap-1",
-                              mirrorAutopilot ? "text-emerald-400" : "text-zinc-500"
-                            )}
-                          >
-                            {mirrorAutopilot && <Zap className="w-3 h-3 text-emerald-400" />}
-                            <span>{mirrorAutopilot ? "Активний" : "Вимкнено"}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 2. Auto-Pilot Switch Card */}
-                <div className="p-4.5 rounded-2xl bg-zinc-900/50 border border-white/8 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400 flex-shrink-0">
-                      <Zap className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-white tracking-tight">
-                          Автопілот дзеркал (Zero-Downtime Failover)
-                        </h4>
-                        <span
-                          className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border",
-                            mirrorAutopilot
-                              ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25"
-                              : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                          )}
-                        >
-                          {mirrorAutopilot ? "Увімкнено" : "Вимкнено"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                        Автоматичний прогрів сесії та миттєве перемикання на резервне дзеркало у фоні, якщо відеопотік недоступний
-                      </p>
-                    </div>
-                  </div>
-
-                  <label
-                    role="switch"
-                    aria-checked={mirrorAutopilot}
-                    data-testid="mirror-autopilot-toggle"
-                    tabIndex={0}
-                    data-tv-focusable
-                    className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={mirrorAutopilot}
-                      onChange={(e) => handleToggleMirrorAutopilot(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                  </label>
-                </div>
-
-                {/* Smart Mirror Rotator Card */}
-                <div className="p-4.5 rounded-2xl bg-gradient-to-br from-zinc-900/90 via-zinc-900/50 to-zinc-950 border border-rose-500/20 flex flex-col gap-3.5 shadow-xl shadow-black/40">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0 mt-0.5">
-                        <Zap className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm font-bold text-white tracking-tight">
-                            Smart Rotator + DNS-over-HTTPS (DoH)
-                          </h4>
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
-                            АКТИВНО БЕЗ VPN
-                          </span>
-                        </div>
-                        <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                          Провайдери часто підміняють DNS для{" "}
-                          <span className="text-zinc-200 font-mono">rezka.ag</span> та{" "}
-                          <span className="text-zinc-200 font-mono">hdrezka.me</span> на{" "}
-                          <span className="text-rose-400 font-mono">127.0.0.1</span>. Вбудований
-                          DoH-резолвер RDX автоматично отримує реальні IP кластера та відкриває
-                          заблоковані дзеркала напряму.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div data-tv-row="mirror-rotator-actions" className="flex flex-wrap items-center gap-2 pt-1">
-                    <button
-                      onClick={() => handleSmartSelect(false)}
-                      disabled={smartRotating || testing}
-                      data-tv-focusable
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-95 text-white font-bold text-xs transition-all shadow-lg shadow-rose-950/40 cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      {smartRotating ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Zap className="w-3.5 h-3.5" />
-                      )}
-                      <span>Знайти та увімкнути найшвидше</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleSmartSelect(true)}
-                      disabled={smartRotating || testing}
-                      data-tv-focusable
-                      className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-200 font-semibold text-xs border border-white/10 transition-all cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <Shuffle className="w-3.5 h-3.5 text-zinc-300" />
-                      <span>Перемкнути на інше робоче</span>
-                    </button>
-
-                    <button
-                      onClick={handleOpenCaptcha}
-                      disabled={captchaOpening}
-                      data-tv-focusable
-                      className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-medium text-xs border border-white/10 transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
-                      title="Відкрити вікно перевірки Cloudflare / Captcha"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Captcha Bridge</span>
-                      <ExternalLink className="w-3 h-3 opacity-60" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Mirrors List */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                      Пул дзеркал ({allMirrors.length})
-                    </h3>
-                    <button
-                      onClick={handleTestAll}
-                      disabled={testing || smartRotating}
-                      data-tv-focusable
-                      className="flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 transition-colors font-medium cursor-pointer disabled:opacity-50 rounded-lg px-2 py-1 focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <RefreshCw
-                        className={cn("w-3.5 h-3.5", (testing || smartRotating) && "animate-spin")}
-                      />
-                      <span>{testing ? "Перевірка..." : "Перевірити всі"}</span>
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {allMirrors.map((url) => {
-                      const isActive = settings?.active_mirror === url;
-                      const status = testingStatus[url];
-                      const isRecommended = recommendedMirrorUrl === url;
-                      const isCustomOnly = !PRESET_MIRRORS.includes(url) && !isActive;
-
-                      return (
-                        <div
-                          key={url}
-                          tabIndex={0}
-                          role="button"
-                          data-tv-focusable
-                          onClick={() => handleSelectMirror(url)}
-                          className={cn(
-                            "flex items-center justify-between gap-2 px-4 py-3 rounded-2xl border transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
-                            isActive
-                              ? "bg-rose-950/20 border-rose-500/40 text-white shadow-lg shadow-rose-950/20"
-                              : "bg-zinc-900/40 border-white/5 hover:border-white/15 text-zinc-300 hover:bg-zinc-900/70"
-                          )}
-                        >
-                          {/* Left side: Dot + Full URL + 1 Role Badge */}
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div
-                              className={cn(
-                                "w-2.5 h-2.5 rounded-full shrink-0 transition-all",
-                                status?.online
-                                  ? "bg-emerald-500 shadow-md shadow-emerald-500/50"
-                                  : status
-                                  ? "bg-rose-500 shadow-md shadow-rose-500/50"
-                                  : "bg-zinc-600"
-                              )}
-                            />
-                            <span className="shrink-0 whitespace-nowrap font-mono text-sm text-zinc-100 font-medium">
-                              {url}
-                            </span>
-
-                            {isActive ? (
-                              <span className="px-2 py-0.5 rounded-md bg-rose-500 text-white text-[10px] font-bold uppercase tracking-wider shrink-0">
-                                АКТИВНЕ
-                              </span>
-                            ) : isRecommended && status?.online ? (
-                              <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold shrink-0 flex items-center gap-1">
-                                <Crown className="w-3 h-3 text-amber-400" />
-                                Топ
-                              </span>
-                            ) : null}
-                          </div>
-
-                          {/* Right side: Compact Badges + Ping + Actions */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            {status?.online && status.stream_available && (
-                              <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-semibold shrink-0">
-                                Потік OK
-                              </span>
-                            )}
-
-                            {status?.online && status.doh_bypass && (
-                              <span className="px-1.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 text-[10px] font-semibold shrink-0">
-                                DoH
-                              </span>
-                            )}
-
-                            {status?.online && typeof status.health_score === "number" && status.health_score > 0 && (
-                              <span
-                                className={cn(
-                                  "px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono border shrink-0",
-                                  status.health_score >= 80
-                                    ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
-                                    : status.health_score >= 50
-                                    ? "bg-amber-500/10 text-amber-300 border-amber-500/25"
-                                    : "bg-rose-500/10 text-rose-300 border-rose-500/25"
-                                )}
-                              >
-                                {status.health_score}%
-                              </span>
-                            )}
-
-                            {status ? (
-                              status.online ? (
-                                <span
-                                  className={cn(
-                                    "min-w-[58px] text-right font-mono text-xs font-bold shrink-0",
-                                    status.latency_ms < 350
-                                      ? "text-emerald-400"
-                                      : status.latency_ms < 700
-                                      ? "text-amber-400"
-                                      : "text-rose-400"
-                                  )}
-                                >
-                                  {status.latency_ms} мс
-                                </span>
-                              ) : (
-                                <div className="flex flex-col items-end text-right shrink-0">
-                                  <span className="text-xs font-mono font-bold text-rose-400">Офлайн</span>
-                                  {status.status_message && (
-                                    <span className="text-[10px] text-zinc-500 font-normal max-w-[140px] truncate text-right">
-                                      {status.status_message}
-                                    </span>
-                                  )}
-                                </div>
-                              )
-                            ) : (
-                              <span className="min-w-[58px] text-right font-mono text-xs font-bold text-zinc-500 shrink-0">
-                                {testing ? "..." : "—"}
-                              </span>
-                            )}
-
-                            {isCustomOnly && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRemoveCustomMirror(url);
-                                }}
-                                data-tv-focusable
-                                className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
-                                title="Видалити це дзеркало"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                testMirror(url);
-                              }}
-                              data-tv-focusable
-                              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
-                              title="Оновити пінґ"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Add Custom Mirror Input */}
-                  <div data-tv-row="mirror-custom-add" className="flex gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={customInput}
-                      onChange={(e) => setCustomInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleAddCustomMirror()}
-                      data-tv-focusable
-                      placeholder="https://нове-дзеркало.com"
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500 transition-colors"
-                    />
-                    <button
-                      onClick={handleAddCustomMirror}
-                      data-tv-focusable
-                      className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Додати</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Proxy Settings Card */}
-                <div className="p-4 rounded-2xl bg-zinc-900/40 border border-white/8 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-zinc-400" />
-                    <h3 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
-                      HTTP / SOCKS5 Проксі-сервер (Опціонально)
-                    </h3>
-                  </div>
-                  <div data-tv-row="mirror-proxy" className="flex gap-2">
-                    <input
-                      type="text"
-                      value={proxyInput}
-                      onChange={(e) => setProxyInput(e.target.value)}
-                      data-tv-focusable
-                      placeholder="socks5://127.0.0.1:9050 або http://user:pass@host:port"
-                      className="flex-1 px-4 py-2 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
-                    />
-                    <button
-                      onClick={handleSaveProxy}
-                      disabled={savingProxy}
-                      data-tv-focusable
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      {savingProxy ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5" />
-                      )}
-                      <span>Зберегти</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ================= TAB 2: PLAYBACK ================= */}
-            {activeModalTab === "playback" && (
-              <div className="space-y-6">
-                {/* Default Video Quality */}
-                <div className="p-4.5 rounded-2xl bg-zinc-900/50 border border-white/8 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0">
-                      <Film className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-white">Бажана якість відео за замовчуванням</h4>
-                      <p className="text-xs text-zinc-400">
-                        RDX автоматично обиратиме цю роздільну здатність при старті фільму чи серії
-                      </p>
-                    </div>
-                  </div>
-
-                  <div data-tv-row="mirror-quality" className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
-                    {[
-                      { key: "1080p Ultra", label: "1080p Ultra", vip: true },
-                      { key: "1080p", label: "1080p" },
-                      { key: "720p", label: "720p" },
-                      { key: "480p", label: "480p" },
-                      { key: "360p", label: "360p" },
-                    ].map((q) => {
-                      const isSelected = preferredQuality === q.key;
-                      return (
-                        <button
-                          key={q.key}
-                          onClick={() => handleSelectDefaultQuality(q.key)}
-                          data-tv-focusable
-                          className={cn(
-                            "flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer border focus:outline-none focus:ring-4 focus:ring-rose-500",
-                            isSelected
-                              ? "bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-950/50"
-                              : "bg-zinc-950/80 border-white/5 text-zinc-300 hover:bg-zinc-900 hover:border-white/15"
-                          )}
-                        >
-                          {q.vip && <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
-                          <span>{q.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Priority Voiceover / Translator */}
-                <div className="p-4.5 rounded-2xl bg-zinc-900/50 border border-white/8 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0">
-                      <Sliders className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-white">Пріоритетна озвучка</h4>
-                      <p className="text-xs text-zinc-400">
-                        Плеєр спробує автоматично обрати цю озвучку, якщо її назва збігається
-                      </p>
-                    </div>
-                  </div>
-
-                  <input
-                    type="text"
-                    value={preferredTranslator}
-                    onChange={(e) => handleSaveTranslator(e.target.value)}
-                    data-tv-focusable
-                    placeholder="Наприклад: Український, HDRezka Studio"
-                    className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
-                  />
-
-                  {/* Suggestion Chips */}
-                  <div data-tv-row="mirror-translator-presets" className="flex items-center gap-2 flex-wrap text-xs pt-1">
-                    <span className="text-zinc-500 text-[11px]">Швидкі пресети:</span>
-                    {["Український", "HDRezka Studio", "Оригінал"].map((preset) => (
+                    <div key={mirror} className="flex items-center gap-2.5">
                       <button
-                        key={preset}
-                        onClick={() => handleSaveTranslator(preset)}
+                        type="button"
                         data-tv-focusable
+                        onClick={() => {
+                          playButtonClickSound();
+                          handleSelectMirror(mirror);
+                        }}
                         className={cn(
-                          "px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
-                          preferredTranslator === preset
-                            ? "bg-rose-600/30 border-rose-500/50 text-rose-300"
-                            : "bg-white/5 border-white/10 text-zinc-400 hover:text-white"
+                          "flex-1 flex items-center justify-between gap-4 px-5 py-4 rounded-2xl border text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                          isActive
+                            ? "bg-rose-600/15 border-rose-500/50 text-white"
+                            : "bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-zinc-200"
                         )}
                       >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Autoplay Next Episode */}
-                <div className="p-4.5 rounded-2xl bg-zinc-900/50 border border-white/8 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0">
-                        <Sparkles className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">Автоматичний перехід на наступну серію</h4>
-                        <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                          Показувати зворотний відлік за 15 секунд до кінця та автоматично вмикати наступну серію або новий сезон
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Interactive Toggle Switch */}
-                    <label
-                      role="switch"
-                      aria-checked={autoplayNext}
-                      data-testid="autoplay-next-toggle"
-                      tabIndex={0}
-                      data-tv-focusable
-                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={autoplayNext}
-                        onChange={(e) => handleToggleAutoplayNext(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Hardware Engine Card */}
-                <div className="p-4 rounded-2xl bg-zinc-900/40 border border-white/8 space-y-2">
-                  <div className="text-xs font-semibold text-zinc-300 flex items-center gap-2">
-                    <Monitor className="w-4 h-4 text-zinc-400" />
-                    <span>Апаратне декодування та буферизація</span>
-                  </div>
-                  <div className="text-[11px] text-zinc-400 leading-relaxed">
-                    Відеоплеєр RDX використовує ядро{" "}
-                    <span className="text-zinc-200 font-mono">WebKitGTK 2.4x</span> на базі
-                    системного <span className="text-zinc-200 font-mono">GStreamer</span>{" "}
-                    (VAAPI/NVDEC) та розширення{" "}
-                    <span className="text-zinc-200 font-mono">HLS.js MSE</span> зі збільшеним
-                    буфером 120 секунд для плавного мотання.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ================= TAB 3: APPEARANCE & SOUND (NEW) ================= */}
-            {activeModalTab === "appearance" && (
-              <div className="space-y-6">
-                {/* Accent Color Palette Selector Card */}
-                <div className="p-4.5 rounded-2xl bg-[var(--bg-elevated,#1e1f2b)]/60 border border-[var(--border-subtle,rgba(255,255,255,0.08))] space-y-3.5 transition-colors duration-250">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0 mt-0.5">
-                        <Palette className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">Колірний акцент інтерфейсу</h4>
-                        <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                          Персоналізуйте відтінок кнопок, неонового підсвічування та активних елементів
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Horizontal row of circular color swatches */}
-                  <div className="pt-1">
-                    <div data-tv-row="mirror-accent-colors" className="flex items-center gap-3.5 flex-wrap">
-                      {ACCENT_OPTIONS.map((opt) => {
-                        const isSelected = accentColor === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            onClick={() => handleSelectAccent(opt.id)}
-                            data-tv-focusable
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <Server
                             className={cn(
-                              "group relative w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer",
-                              "hover:scale-110 active:scale-95 focus:outline-none focus:ring-4 focus:ring-rose-500",
-                              isSelected
-                                ? "ring-2 ring-white ring-offset-2 ring-offset-[#09090b] shadow-lg scale-105"
-                                : "opacity-80 hover:opacity-100 ring-1 ring-white/20"
+                              "w-5 h-5 shrink-0",
+                              isActive ? "text-rose-400" : "text-zinc-400"
                             )}
-                            style={{
-                              backgroundColor: opt.hex,
-                              boxShadow: isSelected ? `0 0 16px ${opt.hex}80` : undefined,
-                            }}
-                            title={opt.name}
-                          >
-                            {isSelected && (
-                              <Check className="w-4 h-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] stroke-[3]" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-2 text-xs">
-                      <span className="font-semibold text-white">
-                        {ACCENT_OPTIONS.find((o) => o.id === accentColor)?.name}:
-                      </span>
-                      <span className="text-zinc-400 text-[11px]">
-                        {ACCENT_OPTIONS.find((o) => o.id === accentColor)?.tagline}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Background Depth: True OLED vs Graphite */}
-                <div className="p-4.5 rounded-2xl bg-[var(--bg-elevated,#1e1f2b)]/60 border border-[var(--border-subtle,rgba(255,255,255,0.08))] space-y-3.5 transition-colors duration-250">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0 mt-0.5">
-                        <Moon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">Глибина темної теми (Display Black Depth)</h4>
-                        <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                          Рівень чорного для максимального контрасту на вашому дисплеї
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div data-tv-row="mirror-bg-themes" className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    <button
-                      onClick={() => handleSelectBgTheme("oled")}
-                      data-tv-focusable
-                      className={cn(
-                        "flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
-                        bgTheme === "oled"
-                          ? "bg-zinc-800/90 border-rose-500 shadow-[0_0_14px_rgba(225,29,72,0.25)] ring-1 ring-rose-500"
-                          : "bg-black/30 border-white/8 hover:bg-white/5 hover:border-white/15"
-                      )}
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-black border border-white/30 flex items-center justify-center flex-shrink-0 shadow-inner">
-                        <div className="w-4 h-4 rounded-full bg-black ring-2 ring-white/50" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                          True OLED Black
-                          <span className="text-[10px] font-medium text-rose-400/90 bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/20">
-                            Дефолт
-                          </span>
-                          {bgTheme === "oled" && <Check className="w-3.5 h-3.5 text-rose-400 stroke-[3] ml-auto" />}
-                        </div>
-                        <div className="text-[11px] text-zinc-400 truncate">
-                          Абсолютний нуль пікселів (#000000)
-                        </div>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => handleSelectBgTheme("obsidian")}
-                      data-tv-focusable
-                      className={cn(
-                        "flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
-                        bgTheme === "obsidian"
-                          ? "bg-zinc-800/90 border-rose-500 shadow-[0_0_14px_rgba(225,29,72,0.25)] ring-1 ring-rose-500"
-                          : "bg-black/30 border-white/8 hover:bg-white/5 hover:border-white/15"
-                      )}
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-[#09090b] border border-white/20 flex items-center justify-center flex-shrink-0 shadow-inner">
-                        <div className="w-4 h-4 rounded-full bg-zinc-800 border border-zinc-600" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                          Obsidian Dark
-                          {bgTheme === "obsidian" && <Check className="w-3.5 h-3.5 text-rose-400 stroke-[3] ml-auto" />}
-                        </div>
-                        <div className="text-[11px] text-zinc-400 truncate">
-                          М'який глибокий цинк (#09090b)
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Startup Sound Chime Card */}
-                <div className="p-4.5 rounded-2xl bg-[var(--bg-elevated,#1e1f2b)]/60 border border-[var(--border-subtle,rgba(255,255,255,0.08))] transition-colors duration-250">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0">
-                        <Volume2 className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">Звуковий сигнал заставки (RDX Chime)</h4>
-                        <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                          Відтворювати фірмовий кінематографічний звук при запуску додатку
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Toggle Switch */}
-                    <label
-                      tabIndex={0}
-                      data-tv-focusable
-                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={startupSound}
-                        onChange={(e) => handleToggleStartupSound(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* System UI Feedback Sounds Card */}
-                <div className="p-4.5 rounded-2xl bg-[var(--bg-elevated,#1e1f2b)]/60 border border-[var(--border-subtle,rgba(255,255,255,0.08))] transition-colors duration-250">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0">
-                        <Sliders className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">Звуки інтерфейсу (TV UI Feedback)</h4>
-                        <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                          М'який тактильний відгук при наведенні та відкритті карток
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Toggle Switch */}
-                    <label
-                      tabIndex={0}
-                      data-tv-focusable
-                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={uiSounds}
-                        onChange={(e) => handleToggleUiSounds(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Ambient Glow Card */}
-                <div className="p-4.5 rounded-2xl bg-[var(--bg-elevated,#1e1f2b)]/60 border border-[var(--border-subtle,rgba(255,255,255,0.08))] space-y-3 transition-colors duration-250">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0 mt-0.5">
-                        <Sparkles className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">Фоновий ефект розмиття (Ambient Backdrop Glow)</h4>
-                        <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                          М'яке розмите світіння під колір постера у стилі Apple TV на головній сторінці
-                        </p>
-                      </div>
-                    </div>
-
-                    <label
-                      tabIndex={0}
-                      data-tv-focusable
-                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={ambientGlow}
-                        onChange={(e) => handleToggleAmbientGlow(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* 60fps Motion Animations */}
-                <div className="p-4.5 rounded-2xl bg-[var(--bg-elevated,#1e1f2b)]/60 border border-[var(--border-subtle,rgba(255,255,255,0.08))] space-y-3 transition-colors duration-250">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0 mt-0.5">
-                        <Eye className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-white">Плавні анімації 60fps (Framer Motion)</h4>
-                        <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
-                          Апаратне прискорення переходів карток та плавний скрол без ривків
-                        </p>
-                      </div>
-                    </div>
-
-                    <label
-                      tabIndex={0}
-                      data-tv-focusable
-                      className="relative inline-flex items-center cursor-pointer flex-shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={motion60fps}
-                        onChange={(e) => handleToggleMotion60fps(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ================= TAB 4: ABOUT & SHORTCUTS ================= */}
-            {activeModalTab === "about" && (
-              <div className="space-y-6">
-                {/* Brand Banner Card */}
-                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 shadow-xl group">
-                  <div className="relative aspect-[21/9] sm:aspect-[24/8] w-full overflow-hidden bg-black">
-                    <img
-                      src="/banner.jpg"
-                      alt="RDX Banner"
-                      className="w-full h-full object-cover object-center group-hover:scale-[1.02] transition-transform duration-500 ease-out"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent" />
-                  </div>
-
-                  <div className="p-5 relative -mt-12 sm:-mt-16 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
-                    <div>
-                      <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-baseline">
-                        RDX-TV<span className="text-rose-500">.</span>
-                        <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full ml-2.5">
-                          v1.0.9
-                        </span>
-                      </h3>
-                      <p className="text-xs text-zinc-300 mt-1 max-w-lg leading-relaxed">
-                        Клієнт для онлайн-кінотеатру HDRezka з кінематографічним інтерфейсом Smart TV та апаратними шейдерами.
-                      </p>
-                      <div className="flex items-center gap-3 mt-3">
-                        <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-                          <span>Розробник:</span>
-                          <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-mono text-xs font-bold border border-white/10">
-                            justgl
+                          />
+                          <span className="font-mono text-base font-semibold truncate">
+                            {mirror}
                           </span>
                         </div>
-                        <a
-                          href="https://github.com/thecapibara/RDX-TV"
-                          target="_blank"
-                          rel="noreferrer"
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          {status && (
+                            <span
+                              className={cn(
+                                "px-2.5 py-1 rounded-lg text-xs font-mono font-semibold",
+                                status.online
+                                  ? "bg-emerald-500/15 text-emerald-300"
+                                  : "bg-rose-500/15 text-rose-300"
+                              )}
+                            >
+                              {status.online ? `${status.latency_ms} ms` : "Офлайн"}
+                            </span>
+                          )}
+                          {isActive && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 text-white text-xs font-bold">
+                              <Check className="w-3.5 h-3.5" /> Активне
+                            </span>
+                          )}
+                        </div>
+                      </button>
+
+                      {isCustom && (
+                        <button
+                          type="button"
                           data-tv-focusable
-                          className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-semibold text-xs border border-rose-500/30 transition-colors focus:outline-none focus:ring-4 focus:ring-rose-500"
+                          onClick={() => {
+                            playButtonClickSound();
+                            handleRemoveCustomMirror(mirror);
+                          }}
+                          title="Видалити дзеркало"
+                          className="p-4 rounded-2xl bg-white/[0.04] hover:bg-rose-600/20 border border-white/10 text-zinc-400 hover:text-rose-400 cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
                         >
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>GitHub Репозиторій</span>
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* OTA Updates Card */}
-                <div className="p-4.5 rounded-2xl bg-zinc-900/60 border border-white/10 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400 flex-shrink-0">
-                      <Sparkles className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-white">Оновлення програми (OTA)</h4>
-                      <p className="text-xs text-zinc-400 mt-0.5">
-                        Автоматична перевірка релізів та оновлення через GitHub
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 flex-wrap pt-0.5">
-                    <button
-                      onClick={handleManualUpdateCheck}
-                      disabled={isCheckingUpdates}
-                      data-tv-focusable
-                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-semibold text-xs border border-rose-500/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50 shrink-0 focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      {isCheckingUpdates ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3.5 h-3.5" />
+                          <Trash2 className="w-5 h-5" />
+                        </button>
                       )}
-                      <span>{isCheckingUpdates ? "Перевірка..." : "Перевірити оновлення"}</span>
-                    </button>
+                    </div>
+                  );
+                })}
+              </div>
 
-                    {updateCheckResult && (
-                      <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-300 font-medium">
-                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span>{updateCheckResult}</span>
-                      </div>
+              {/* Add Custom Mirror */}
+              <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3">
+                <div className="text-sm font-bold text-white">Додати власне дзеркало</div>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={customInput}
+                    onChange={(e) => setCustomInput(e.target.value)}
+                    data-tv-focusable
+                    placeholder="https://example-rezka.org"
+                    className="flex-1 px-4 py-3 rounded-xl bg-zinc-950 border border-white/15 text-white placeholder-zinc-500 text-sm focus:outline-none focus:ring-4 focus:ring-rose-500"
+                  />
+                  <button
+                    type="button"
+                    data-tv-focusable
+                    onClick={() => {
+                      playButtonClickSound();
+                      handleAddCustomMirror();
+                    }}
+                    className="flex items-center gap-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-400"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Додати</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Proxy */}
+              <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-white">
+                  <Shield className="w-4 h-4 text-zinc-400" />
+                  <span>HTTP / SOCKS5 Проксі (Опціонально)</span>
+                </div>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={proxyInput}
+                    onChange={(e) => setProxyInput(e.target.value)}
+                    data-tv-focusable
+                    placeholder="socks5://127.0.0.1:9050 або http://host:port"
+                    className="flex-1 px-4 py-3 rounded-xl bg-zinc-950 border border-white/15 text-white placeholder-zinc-500 text-sm focus:outline-none focus:ring-4 focus:ring-rose-500"
+                  />
+                  <button
+                    type="button"
+                    data-tv-focusable
+                    disabled={savingProxy}
+                    onClick={() => {
+                      playButtonClickSound();
+                      handleSaveProxy();
+                    }}
+                    className="flex items-center gap-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-400"
+                  >
+                    {savingProxy ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
                     )}
+                    <span>Зберегти</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ================= TAB 2: PLAYBACK ================= */}
+          {activeTab === "playback" && (
+            <>
+              <div>
+                <h2 className="text-2xl font-black text-white">Відтворення та якість</h2>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Параметри потоку за замовчуванням для телевізора.
+                </p>
+              </div>
+
+              {/* Default Quality */}
+              <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Sliders className="w-5 h-5 text-rose-400" />
+                  <span className="text-base font-bold text-white">Якість відео за замовчуванням</span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {QUALITY_OPTIONS.map((q) => {
+                    const selected = preferredQuality === q.id;
+                    return (
+                      <button
+                        key={q.id}
+                        type="button"
+                        data-tv-focusable
+                        onClick={() => {
+                          playButtonClickSound();
+                          handleQualityChange(q.id);
+                        }}
+                        className={cn(
+                          "flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-bold border transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                          selected
+                            ? "bg-rose-600 border-rose-500 text-white"
+                            : "bg-zinc-950/70 border-white/10 text-zinc-300 hover:text-white"
+                        )}
+                      >
+                        {q.premium && <Crown className="w-4 h-4 text-amber-300" />}
+                        <span>{q.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Preferred Translator */}
+              <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Film className="w-5 h-5 text-rose-400" />
+                  <span className="text-base font-bold text-white">Пріоритетна озвучка</span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {TRANSLATOR_OPTIONS.map((tr) => {
+                    const selected = preferredTranslator === tr.id;
+                    return (
+                      <button
+                        key={tr.id || "auto"}
+                        type="button"
+                        data-tv-focusable
+                        onClick={() => {
+                          playButtonClickSound();
+                          handleTranslatorChange(tr.id);
+                        }}
+                        className={cn(
+                          "px-4 py-3 rounded-xl text-sm font-bold border transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                          selected
+                            ? "bg-rose-600 border-rose-500 text-white"
+                            : "bg-zinc-950/70 border-white/10 text-zinc-300 hover:text-white"
+                        )}
+                      >
+                        {tr.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <TvSwitch
+                checked={autoplayNext}
+                onToggle={() => {
+                  const next = !autoplayNext;
+                  setAutoplayNext(next);
+                  try {
+                    localStorage.setItem("rdx_autoplay_next", next ? "true" : "false");
+                  } catch {}
+                  if (settings) {
+                    const updated = { ...settings, autoplay_next: next };
+                    setSettings(updated);
+                    api.updateSettings(updated).catch(() => {});
+                  }
+                }}
+                label="Автоперехід до наступної серії"
+                description="Автоматично запускати наступний епізод серіалу після завершення поточного"
+                icon={<Play className="w-5 h-5" />}
+              />
+            </>
+          )}
+
+          {/* ================= TAB 3: APPEARANCE & SOUND ================= */}
+          {activeTab === "appearance" && (
+            <>
+              <div>
+                <h2 className="text-2xl font-black text-white">Вигляд і звук</h2>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Налаштування контрасту OLED-екрана та звукового супроводу пульта.
+                </p>
+              </div>
+
+              {/* Accent Color */}
+              <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Palette className="w-5 h-5 text-rose-400" />
+                  <span className="text-base font-bold text-white">Колірний акцент</span>
+                </div>
+                <div className="flex flex-wrap gap-3.5">
+                  {ACCENT_OPTIONS.map((opt) => {
+                    const isSelected = accentColor === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        data-tv-focusable
+                        onClick={() => {
+                          playButtonClickSound();
+                          setAccentColorState(opt.id);
+                          setAccentColor(opt.id);
+                        }}
+                        title={opt.name}
+                        className={cn(
+                          "w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                          isSelected ? "ring-2 ring-white scale-110" : "opacity-80 hover:opacity-100"
+                        )}
+                        style={{ backgroundColor: opt.hex }}
+                      >
+                        {isSelected && <Check className="w-5 h-5 text-white stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* OLED Background Depth */}
+              <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Moon className="w-5 h-5 text-rose-400" />
+                  <span className="text-base font-bold text-white">Глибина темної теми</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    data-tv-focusable
+                    onClick={() => {
+                      playButtonClickSound();
+                      setBgThemeState("oled");
+                      setBgTheme("oled");
+                    }}
+                    className={cn(
+                      "flex items-center gap-3.5 p-4 rounded-2xl border text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                      bgTheme === "oled"
+                        ? "bg-rose-600/15 border-rose-500 text-white"
+                        : "bg-black/40 border-white/10 text-zinc-300"
+                    )}
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-black border border-white/30 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold">True OLED (#000000)</div>
+                      <div className="text-xs text-zinc-400">Абсолютний чорний для ТВ</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-tv-focusable
+                    onClick={() => {
+                      playButtonClickSound();
+                      setBgThemeState("obsidian");
+                      setBgTheme("obsidian");
+                    }}
+                    className={cn(
+                      "flex items-center gap-3.5 p-4 rounded-2xl border text-left transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                      bgTheme === "obsidian"
+                        ? "bg-rose-600/15 border-rose-500 text-white"
+                        : "bg-zinc-900/50 border-white/10 text-zinc-300"
+                    )}
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-[#09090b] border border-white/30 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold">Obsidian (#09090b)</div>
+                      <div className="text-xs text-zinc-400">М'який глибокий темний фон</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <TvSwitch
+                checked={startupSound}
+                onToggle={() => {
+                  const next = !startupSound;
+                  setStartupSound(next);
+                  try {
+                    localStorage.setItem("rdx_startup_sound", next ? "true" : "false");
+                  } catch {}
+                  if (settings) {
+                    const updated = { ...settings, startup_sound: next };
+                    setSettings(updated);
+                    api.updateSettings(updated).catch(() => {});
+                  }
+                }}
+                label="Звук запуску"
+                description="Відтворювати фірмовий звук при старті RDX-TV"
+                icon={<Volume2 className="w-5 h-5" />}
+              />
+
+              <TvSwitch
+                checked={uiSounds}
+                onToggle={() => {
+                  const next = !uiSounds;
+                  setUiSounds(next);
+                  setUiSoundsEnabled(next);
+                }}
+                label="Звуки навігації (D-pad)"
+                description="Тактильний звуковий відгук при русі пультом і відкритті карток"
+                icon={<Volume2 className="w-5 h-5" />}
+              />
+            </>
+          )}
+
+          {/* ================= TAB 4: ABOUT ================= */}
+          {activeTab === "about" && (
+            <>
+              <div>
+                <h2 className="text-2xl font-black text-white">Про RDX-TV</h2>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Клієнт для Android TV та Samsung Smart TV (Tizen).
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-white/[0.04] border border-white/10 space-y-5">
+                <div className="flex items-center gap-4">
+                  <img
+                    src="/icon-tv.png"
+                    alt="RDX-TV"
+                    className="w-16 h-16 rounded-2xl object-contain shrink-0"
+                  />
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl font-black text-white">
+                        RDX-TV<span className="text-rose-500">.</span>
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-rose-600/20 border border-rose-500/35 text-xs font-mono font-bold text-rose-300">
+                        v{APP_VERSION}
+                      </span>
+                    </div>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      10-foot Smart TV інтерфейс • Розробник: <span className="text-white font-semibold">justgl</span>
+                    </p>
                   </div>
                 </div>
 
-                {/* TV Remote & Shortcuts Grid */}
-                <div className="p-4.5 rounded-2xl bg-zinc-900/60 border border-white/10 space-y-3">
-                  <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                    Керування з пульта ДК (TV Remote)
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Навігація по інтерфейсу</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        D-Pad (↑ ↓ ← →)
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Вибір / Відкрити / Пауза</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        OK / Enter
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Назад / Закрити меню</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        Return / Back
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Перемотка у плеєрі</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        ← / → (±10с)
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Показати / сховати OSD</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        ↑ / ↓ у плеєрі
-                      </kbd>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-white/5">
-                      <span className="text-zinc-400">Медіакнопки пульта</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 font-mono text-[11px] text-zinc-200">
-                        Play / Pause / FF / RW
-                      </kbd>
-                    </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    data-tv-focusable
+                    disabled={isCheckingUpdates}
+                    onClick={() => {
+                      playButtonClickSound();
+                      handleManualUpdateCheck();
+                    }}
+                    className="flex items-center gap-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-rose-400"
+                  >
+                    {isCheckingUpdates ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    <span>{isCheckingUpdates ? "Перевірка..." : "Перевірити оновлення"}</span>
+                  </button>
+
+                  {updateCheckResult && (
+                    <span className="px-4 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-sm text-emerald-300 font-medium">
+                      {updateCheckResult}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* TV Remote Guide */}
+              <div className="p-6 rounded-2xl bg-white/[0.04] border border-white/10 space-y-4">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-300">
+                  Керування з пульта ДК (TV Remote)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-950/80 border border-white/10">
+                    <span className="text-zinc-300">Навігація</span>
+                    <kbd className="px-2.5 py-1 rounded-lg bg-white/10 font-mono text-xs text-white">
+                      D-Pad (↑ ↓ ← →)
+                    </kbd>
+                  </div>
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-950/80 border border-white/10">
+                    <span className="text-zinc-300">Вибір / Пауза</span>
+                    <kbd className="px-2.5 py-1 rounded-lg bg-white/10 font-mono text-xs text-white">
+                      OK / Enter
+                    </kbd>
+                  </div>
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-950/80 border border-white/10">
+                    <span className="text-zinc-300">Назад / Закрити</span>
+                    <kbd className="px-2.5 py-1 rounded-lg bg-white/10 font-mono text-xs text-white">
+                      Return / Back
+                    </kbd>
+                  </div>
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-950/80 border border-white/10">
+                    <span className="text-zinc-300">Перемотка у плеєрі</span>
+                    <kbd className="px-2.5 py-1 rounded-lg bg-white/10 font-mono text-xs text-white">
+                      ← / → (±10с)
+                    </kbd>
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
-      </div>
+      </main>
     </div>
   );
 };

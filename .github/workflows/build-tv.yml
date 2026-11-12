@@ -1,0 +1,127 @@
+name: Build RDX-TV (Android TV & Tizen)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-android-tv:
+    name: Android TV APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Rust & Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Configure Android SDK & NDK env
+        run: |
+          NDK_DIR=$(ls -d "$ANDROID_HOME/ndk/"* | sort -V | tail -n 1)
+          echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "Using NDK at $NDK_DIR"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Initialize Tauri Android & patch Leanback TV manifest
+        run: |
+          npx tauri android init
+          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+          python3 - << 'EOF'
+          from pathlib import Path
+          p = Path("src-tauri/gen/android/app/src/main/AndroidManifest.xml")
+          txt = p.read_text()
+          if "android.software.leanback" not in txt:
+              txt = txt.replace(
+                  "<application",
+                  '    <uses-feature android:name="android.software.leanback" android:required="false" />\n'
+                  '    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />\n\n    <application',
+                  1,
+              )
+          if "android:banner=" not in txt:
+              txt = txt.replace(
+                  "<application",
+                  '<application android:banner="@mipmap/ic_launcher"',
+                  1,
+              )
+          if "CATEGORY_LEANBACK_LAUNCHER" not in txt:
+              txt = txt.replace(
+                  '<category android:name="android.intent.category.LAUNCHER" />',
+                  '<category android:name="android.intent.category.LAUNCHER" />\n                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />',
+                  1,
+              )
+          p.write_text(txt)
+          print("Patched AndroidManifest.xml for Android TV Leanback")
+          EOF
+
+      - name: Build Android TV APK (arm64 debug-signed)
+        run: npx tauri android build --apk --debug --target aarch64
+
+      - name: Collect APK
+        run: |
+          mkdir -p artifacts
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          cp "$APK" artifacts/RDX-TV-android-tv-arm64.apk
+          ls -lh artifacts/
+
+      - name: Upload Android TV APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RDX-TV-android-tv-apk
+          path: artifacts/RDX-TV-android-tv-arm64.apk
+
+  build-tizen-bundle:
+    name: Samsung Tizen Web Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tizen dist
+        run: npm run build:tizen
+
+      - name: Package Tizen staging archive
+        run: |
+          mkdir -p artifacts
+          (cd dist-tizen && zip -r ../artifacts/RDX-TV-tizen-dist.zip .)
+          ls -lh artifacts/
+
+      - name: Upload Samsung Tizen Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: RDX-TV-tizen-bundle
+          path: artifacts/RDX-TV-tizen-dist.zip

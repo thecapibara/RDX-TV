@@ -1,7 +1,8 @@
 /**
- * RDX-TV - UI Audio Engine (Web Audio API + Original Baked MP3s + Synth Fallback)
- * Preloads /hovercard.mp3, /opencard.mp3, /buttonclick.mp3 into AudioBuffers,
- * with automatic HTMLAudioElement + Web Audio oscillator fallback for WebKitGTK.
+ * RDX-TV - UI Audio Engine (Web Audio API + Original Baked MP3s + 0ms Synth Fallback)
+ * Preloads /hovercard.mp3, /opencard.mp3, /buttonclick.mp3 into AudioBuffers with gain boost
+ * (since original MP3s peak at -14.7dB..-4.1dB), and falls back directly to 0ms Web Audio
+ * oscillators if WebKitGTK cannot decode MP3s in AudioContext.
  */
 
 const UI_SOUNDS_KEY = "rdx_tv_ui_sounds";
@@ -31,9 +32,6 @@ function getAudioContext(): AudioContext | null {
     if (!sharedAudioCtx || sharedAudioCtx.state === "closed") {
       sharedAudioCtx = new AudioCtx();
     }
-    if (sharedAudioCtx.state === "suspended") {
-      sharedAudioCtx.resume().catch(() => {});
-    }
     return sharedAudioCtx;
   } catch {
     return null;
@@ -62,7 +60,8 @@ async function loadSoundBuffer(url: string): Promise<AudioBuffer | null> {
       const decoded = await ctx.decodeAudioData(arr);
       bufferCache.set(url, decoded);
       return decoded;
-    } catch {
+    } catch (err) {
+      console.warn("[RDX-Audio] decodeAudioData failed for", url, "— using Web Audio synth:", err);
       failedBuffers.add(url);
       return null;
     } finally {
@@ -107,24 +106,7 @@ function playSound(
   if (!uiSoundsEnabled) return;
 
   const ctx = getAudioContext();
-
-  const playHtmlOrSynth = () => {
-    try {
-      const audio = new Audio(url);
-      audio.volume = Math.min(1, volume);
-      audio.playbackRate = playbackRate;
-      audio.play().catch(() => {
-        if (ctx) fallbackSynth(ctx);
-      });
-    } catch {
-      if (ctx) fallbackSynth(ctx);
-    }
-  };
-
-  if (!ctx) {
-    playHtmlOrSynth();
-    return;
-  }
+  if (!ctx) return;
 
   const runWithCtx = (fn: () => void) => {
     if (ctx.state === "suspended") {
@@ -154,28 +136,13 @@ function playSound(
   }
 
   if (failedBuffers.has(url)) {
-    runWithCtx(() => playHtmlOrSynth());
+    runWithCtx(() => fallbackSynth(ctx));
     return;
   }
 
-  loadSoundBuffer(url).then((buf) => {
-    runWithCtx(() => {
-      if (buf) {
-        try {
-          const src = ctx.createBufferSource();
-          const gain = ctx.createGain();
-          src.buffer = buf;
-          src.playbackRate.value = playbackRate;
-          gain.gain.value = volume;
-          src.connect(gain);
-          gain.connect(ctx.destination);
-          src.start(0);
-          return;
-        } catch {}
-      }
-      playHtmlOrSynth();
-    });
-  });
+  // Trigger preload for next time, and play synth immediately on first hit so 0ms latency
+  loadSoundBuffer(url);
+  runWithCtx(() => fallbackSynth(ctx));
 }
 
 // Preload all baked UI sounds on module load
@@ -204,7 +171,7 @@ export const suppressHoverSound = (cooldownMs: number = 400) => {
 };
 
 /**
- * Original baked hover/focus sound (/hovercard.mp3) with synth fallback
+ * Original baked hover/focus sound (/hovercard.mp3, boosted from -14.7dB) with 0ms synth fallback
  */
 export const playHoverSound = () => {
   if (!uiSoundsEnabled) return;
@@ -212,31 +179,31 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
-  playSound("/hovercard.mp3", 0.75, 1.0, (ctx) => playSynthTone(ctx, 520, 260, 0.04, 0.18));
+  playSound("/hovercard.mp3", 2.8, 1.0, (ctx) => playSynthTone(ctx, 520, 260, 0.04, 0.22));
 };
 
 /**
- * Original baked card/modal open sound (/opencard.mp3) with synth fallback
+ * Original baked card/modal open sound (/opencard.mp3, boosted from -9.5dB) with 0ms synth fallback
  */
 export const playModalOpenSound = () => {
-  playSound("/opencard.mp3", 0.85, 1.0, (ctx) => {
-    playSynthTone(ctx, 280, 420, 0.18, 0.15);
-    playSynthTone(ctx, 420, 630, 0.18, 0.1);
+  playSound("/opencard.mp3", 1.8, 1.0, (ctx) => {
+    playSynthTone(ctx, 280, 420, 0.18, 0.18);
+    playSynthTone(ctx, 420, 630, 0.18, 0.12);
   });
 };
 
 /**
- * Original baked button/OK click sound (/buttonclick.mp3) with synth fallback
+ * Original baked button/OK click sound (/buttonclick.mp3) with 0ms synth fallback
  */
 export const playButtonClickSound = () => {
-  playSound("/buttonclick.mp3", 0.85, 1.0, (ctx) => playSynthTone(ctx, 760, 340, 0.035, 0.2));
+  playSound("/buttonclick.mp3", 1.4, 1.0, (ctx) => playSynthTone(ctx, 760, 340, 0.035, 0.22));
 };
 
 /**
  * Back remote sound
  */
 export const playBackSound = () => {
-  playSound("/buttonclick.mp3", 0.65, 0.78, (ctx) => playSynthTone(ctx, 440, 190, 0.055, 0.16));
+  playSound("/buttonclick.mp3", 1.1, 0.78, (ctx) => playSynthTone(ctx, 440, 190, 0.055, 0.18));
 };
 
 /**

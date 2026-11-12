@@ -25,7 +25,7 @@ import { UpdateModal } from "./components/UpdateModal";
 import { BookmarksView } from "./components/BookmarksView";
 import { DownloadsView } from "./components/DownloadsView";
 import { CategoryFilterBar } from "./components/CategoryFilterBar";
-import { playButtonClickSound } from "./services/sound";
+import { playButtonClickSound, playAntennaBubblesSound } from "./services/sound";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { downloadsStore, OPEN_DOWNLOADS_EVENT } from "./services/downloadsStore";
 import { checkForUpdates, type UpdateInfo } from "./services/updater";
@@ -246,8 +246,12 @@ export default function App() {
 
   useEffect(() => {
     initializeApp();
-    const timer = setTimeout(() => setMinSplashDone(true), 1750);
-    return () => clearTimeout(timer);
+    const bubblesTimer = setTimeout(() => playAntennaBubblesSound(), 780);
+    const timer = setTimeout(() => setMinSplashDone(true), 2200);
+    return () => {
+      clearTimeout(bubblesTimer);
+      clearTimeout(timer);
+    };
   }, [initializeApp]);
 
   // Smoothly dismiss and remove persistent DOM #rdx-splash once animation finishes

@@ -118,17 +118,16 @@
       }
       .rdx-tv-antennas {
         position: absolute;
-        top: -28px;
-        right: -24px;
-        width: 64px;
-        height: 54px;
+        top: -54px;
+        right: -50px;
+        width: 116px;
+        height: 104px;
         overflow: visible;
         z-index: 4;
         pointer-events: none;
-        transform-origin: 12px 44px;
+        transform-origin: 24px 82px;
         opacity: 0;
         transform: scale(0) rotate(-18deg);
-        filter: drop-shadow(0 0 12px var(--accent-500, rgba(244, 63, 94, 0.7)));
         animation: rdxAntennaPop 0.52s cubic-bezier(0.34, 1.56, 0.64, 1) 0.78s forwards;
       }
       .rdx-pulse-ring {
@@ -338,11 +337,44 @@
       <div class="rdx-logo-stage">
         <div class="rdx-pulse-ring"></div>
         <div class="rdx-pulse-ring-2"></div>
-        <svg class="rdx-tv-antennas" viewBox="0 0 64 54" fill="none" aria-hidden="true">
-          <line x1="12" y1="44" x2="3" y2="10" stroke="#f4f4f5" stroke-width="3.6" stroke-linecap="round" />
-          <line x1="12" y1="44" x2="48" y2="23" stroke="#f4f4f5" stroke-width="3.6" stroke-linecap="round" />
-          <circle cx="3" cy="10" r="5" fill="#f43f5e" stroke="#ffffff" stroke-width="1.5" />
-          <circle cx="48" cy="23" r="5" fill="#f43f5e" stroke="#ffffff" stroke-width="1.5" />
+        <svg id="rdx-tv-antennas" class="rdx-tv-antennas" viewBox="0 0 116 104" fill="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="rdxMetalStem" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#e4e4e7" />
+              <stop offset="35%" stop-color="#71717a" />
+              <stop offset="70%" stop-color="#3f3f46" />
+              <stop offset="100%" stop-color="#18181b" />
+            </linearGradient>
+            <linearGradient id="rdxMetalBase" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#a1a1aa" />
+              <stop offset="50%" stop-color="#3f3f46" />
+              <stop offset="100%" stop-color="#18181b" />
+            </linearGradient>
+            <radialGradient id="rdxCrimsonOrb" cx="35%" cy="30%" r="70%">
+              <stop offset="0%" stop-color="#fda4af" />
+              <stop offset="35%" stop-color="#f43f5e" />
+              <stop offset="75%" stop-color="#e11d48" />
+              <stop offset="100%" stop-color="#881337" />
+            </radialGradient>
+            <filter id="rdxOrbGlow" x="-60%" y="-60%" width="220%" height="220%">
+              <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#f43f5e" flood-opacity="0.75" />
+            </filter>
+          </defs>
+          <!-- Metallic base socket -->
+          <path d="M16 84 C18 76, 26 74, 32 78 L27 87 Z" fill="url(#rdxMetalBase)" stroke="#52525b" stroke-width="1" />
+          <!-- Left upright tapered metallic horn -->
+          <path d="M22 80 L10 24 L16 23 L26 78 Z" fill="url(#rdxMetalStem)" />
+          <line x1="23" y1="78" x2="12" y2="25" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.1" stroke-linecap="round" />
+          <!-- Right angled tapered metallic horn -->
+          <path d="M24 81 L78 44 L80 49 L27 84 Z" fill="url(#rdxMetalStem)" />
+          <line x1="25" y1="81" x2="77" y2="46" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.1" stroke-linecap="round" />
+          <!-- 3D glossy crimson tip orbs -->
+          <g filter="url(#rdxOrbGlow)">
+            <circle cx="13" cy="22" r="7.5" fill="url(#rdxCrimsonOrb)" />
+            <circle cx="10.8" cy="19.5" r="2.1" fill="#ffffff" fill-opacity="0.75" />
+            <circle cx="81" cy="45" r="7.5" fill="url(#rdxCrimsonOrb)" />
+            <circle cx="78.8" cy="42.5" r="2.1" fill="#ffffff" fill-opacity="0.75" />
+          </g>
         </svg>
         <div class="rdx-boot-logo-wrap">
           <img src="/logo.png" alt="RDX-TV" class="rdx-boot-logo" />
@@ -364,6 +396,45 @@
 
     <div id="root"></div>
     <script>
+      // Play bubbles SFX in exact sync with antenna horns animationstart
+      (function() {
+        var played = false;
+        function playBubbles() {
+          if (played) return;
+          played = true;
+          try {
+            if (localStorage.getItem("rdx_startup_sound") === "false") return;
+            var AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            var ctx = new AudioCtx();
+            if (ctx.state === "suspended") ctx.resume().catch(function() {});
+            function bubble(offset, f1, f2, dur, vol) {
+              var t = ctx.currentTime + offset;
+              var osc = ctx.createOscillator();
+              var gain = ctx.createGain();
+              osc.type = "sine";
+              osc.frequency.setValueAtTime(f1, t);
+              osc.frequency.exponentialRampToValueAtTime(f2, t + dur);
+              gain.gain.setValueAtTime(0.0001, t);
+              gain.gain.linearRampToValueAtTime(vol, t + 0.01);
+              gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(t);
+              osc.stop(t + dur + 0.02);
+            }
+            bubble(0.0, 310, 690, 0.085, 0.24);
+            bubble(0.075, 460, 980, 0.09, 0.19);
+            bubble(0.15, 640, 1220, 0.07, 0.12);
+            setTimeout(function() { ctx.close().catch(function() {}); }, 600);
+          } catch (e) {}
+        }
+        var ant = document.getElementById("rdx-tv-antennas");
+        if (ant) {
+          ant.addEventListener("animationstart", playBubbles, { once: true });
+        }
+      })();
+
       // Failsafe: guarantee #rdx-splash is dismissed after at most 3s regardless of network or React state
       setTimeout(function() {
         var s = document.getElementById("rdx-splash");

@@ -1,102 +1,80 @@
-# RDX. — HDRezka Desktop Cinema & Smart TV Client
+# RDX-TV. — Smart TV Streaming Client (Android TV & Samsung Tizen)
 
 <p align="center">
-  <img src="assets/banner.jpg" width="100%" alt="RDX Hero Banner" />
+  <img src="assets/banner.jpg" width="100%" alt="RDX-TV Hero Banner" />
 </p>
 
 <p align="center">
-  <b>Native cross-platform desktop streaming client for HDRezka (and its mirrors) with an Android TV / Apple TV inspired interface and Spotify Desktop ergonomics.</b><br/>
-  Built with <b>Rust (Tauri v2)</b>, <b>React 19</b>, <b>TypeScript</b>, and <b>Tailwind CSS</b>.
+  <b>10-foot Smart TV streaming client for HDRezka (and its mirrors) built for Android TV (Tauri v2) and Samsung TV (Tizen `.wgt`) with an Apple TV / Google TV inspired interface.</b><br/>
+  Built with <b>Rust (Tauri v2)</b>, <b>React 19</b>, <b>TypeScript</b>, <b>Tailwind CSS</b>, and <b>HLS.js</b>.
 </p>
 
 ---
 
 > [!IMPORTANT]
 > **🇺🇦 Interface Language Note:**
-> Currently, the application interface (menus, OSD controls, and settings) is **exclusively in Ukrainian** (`Українська`), with built-in prioritization and `🇺🇦` badge highlighting for Ukrainian voiceover studios. Multi-language UI localization (English, etc.) is planned for future updates.
+> The application interface (menus, OSD controls, TV keyboard, and settings) is **in Ukrainian** (`Українська`), with built-in prioritization and `🇺🇦` badge highlighting for Ukrainian voiceover studios.
 
 ---
 
 ## ✨ Key Features
 
-- **Smart TV / Cinema UI Aesthetic**:
-  - Clean matte obsidian (`#09090b`) & crimson (`#e11d48`) design language with fluid responsive layout adapting to any window size.
-  - Native `2:3` poster grid with quality/series badges, full-bleed hero banner, and full-screen release pages.
-  - Structured voiceover (translator) selector with instant filter for Ukrainian dubbing/voiceover studios (`🇺🇦`), season switcher, and episode grid.
-- **Custom Cinema Video Player (`HLS` + `MP4`)**:
-  - **Zero-flash seeking**: RAM-buffered HLS segment pipeline (`hls.js`) + tuned GStreamer software decoding (`avdec_h264`) on Linux/Wayland to eliminate VA-API DMABUF frame stutter.
-  - **Glassmorphic Right-Click Context Menu**: On-the-fly switching for Voiceovers, Seasons/Episodes, Video Quality (`360p` to `1080p Ultra`), Playback Speed (`0.25x–2x`), and Aspect Ratio (`Auto`, `Cover`, `Fill`, `16:9`, `21:9`, `4:3`).
-  - **Pro Playback Tools**: **A–B Segment Loop (`L`)**, **Instant Frame Screenshot to PNG (`S`)**, **Sleep Timer (`15–90 min`)**, and **Live Stream Diagnostics Overlay (`I`)** (real-time resolution, buffer health, stream type).
-  - **Custom Smooth SeekBar**: Buffered range indicator, A–B loop markers, hover timestamp preview tooltip, and clickable elapsed/remaining time toggle (`04:12 / 54:39` ↔ `-50:27 / 54:39`).
-- **3 Seamless Window Modes (Single Persistent `<video>` Node)**:
-  1. **Full Cinema OSD Mode**: Auto-hiding controls and keyboard navigation.
-  2. **Docked In-App Mini-Player**: Draggable picture-in-picture overlay inside the app while browsing the catalog.
-  3. **OS-Level Always-on-Top Floating Window (`PiP`)**: Compact frameless floating window across workspaces (including native Wayland / Niri tiling-to-floating support).
-  - **External Player Handoff**: 1-click launch into **MPV** or **VLC** at the exact current timestamp.
-- **Local Watch Progress & Bookmarks (SQLite)**:
-  - Automatically saves playback position (`rdx_data.db`) every 5 seconds along with the selected voiceover studio, season, and episode for 1-click **"Continue Watching"** (`Продовжити перегляд`) from the home screen.
-- **HDRezka Mirror & Anti-Bot Session Manager**:
-  - Native parser and stream decryptor (`#h` trash-string deobfuscator + AJAX episode/translator resolver) for **HDRezka** (`rezka-tv.org`, `rezka.ag`, `hdrezka.ag`, and custom mirrors).
-  - Dynamic mirror switching with real-time latency (ping) checks, custom mirror URLs, and `HTTP` / `SOCKS5` proxy support.
-  - Built-in `<1ms` Rust SHA-256 Proof-of-Work (Anubis) solver with persistent cookie jar + fallback WebView Captcha Bridge.
+- **10-Foot Smart TV / Cinema UI**:
+  - Matte obsidian (`#09090b`) & crimson (`#e11d48`) design language with high-contrast D-pad focus rings and smooth spatial navigation (`Arrow` keys, `OK / Enter`, `Return / Back`).
+  - Full-bleed hero carousel with TMDB 1080p/4K backdrop lookup, **"Continue Watching"** (`Продовжити перегляд`) swimlane with episode progress, and category carousels.
+  - Apple TV / Disney+ style release detail screen with Ukrainian voiceover (`🇺🇦`) prioritization, season/episode picker, and instant playback.
+- **TV Remote First Navigation & Built-in TV Keyboard**:
+  - Full spatial D-pad navigation (`useTvNavigation` / `useTvBack`) across cards, filters, settings, player OSD, and modals — including Samsung Tizen `Return` (`keyCode 10009`) and Android TV `Back`.
+  - Built-in **UA / EN On-Screen TV Keyboard** inside Search alongside native Samsung Tizen IME (`65376` / `65385`) support.
+- **Hybrid TV Audio Engine**:
+  - Native `rodio` playback on desktop testing (`startup.mp3`, `hovercard.mp3`, `opencard.mp3`, `buttonclick.mp3`) + `AudioContext.decodeAudioData` MP3 preloading on **Android TV** and **Samsung Tizen**, plus Web Audio boot splash `bubbles` SFX.
+- **Custom TV Video Player (`HLS` + `MP4`)**:
+  - D-pad controllable OSD (seek `← / →`, Play/Pause `OK`, media remote keys, voiceovers, seasons/episodes, quality up to `1080p Ultra / 4K`, speed, sleep timer, and stream diagnostics).
+  - Auto-saves playback progress every 5 seconds to SQLite (`app_data_dir()` on Android TV / desktop) or `localStorage` on Tizen.
+- **HDRezka Mirror, DoH & Tizen HTTP Bridge**:
+  - Built-in DNS-over-HTTPS (DoH), Anubis PoW solver, dynamic mirror failover, `HTTP` / `SOCKS5` proxy support, and **RDX Bridge URL** transport (`invokeBridge`) for Samsung Tizen `.wgt`.
 
 ---
 
-## 📸 Скріншоти / Screenshots
+## 🎮 TV Remote Controls
 
-<p align="center">
-  <b>Головний екран (Продовжити перегляд з прогресом серій та смарт-стрічки)</b><br/>
-  <img src="assets/screenshots/home.jpg" width="100%" alt="RDX Home Screen" />
-</p>
-
-<p align="center">
-  <b>Кінотеатральний відеоплеєр (OSD, вибір озвучки, серій та якість)</b><br/>
-  <img src="assets/screenshots/player.jpg" width="100%" alt="RDX Video Player" />
-</p>
-
-<p align="center">
-  <b>Каталог фільмів (Швидкі жанрові фільтри, сортування та пагінація)</b><br/>
-  <img src="assets/screenshots/catalog.jpg" width="100%" alt="RDX Movies Catalog" />
-</p>
-
----
-
-## ⌨️ Player Shortcuts
-
-| Shortcut | Action |
+| Remote Button | Action |
 | :--- | :--- |
-| `Space` / `K` / Single Click | Play / Pause |
-| Double Click / `F` | Toggle Fullscreen (with native Niri / Wayland tiling support) |
-| `←` / `→` | Seek **±5 seconds** |
-| `Shift + ←` / `Shift + →` | Seek **±30 seconds** |
-| `↑` / `↓` | Volume **±5%** |
-| `M` | Mute / Unmute |
-| `L` | Cycle **A–B Loop** (`Set Point A` → `Set Point B` → `Clear`) |
-| `S` | Save current video frame screenshot (`.png`) |
-| `I` | Toggle Stream Statistics & Diagnostics overlay |
-| `Right Click (RMB)` | Open custom multi-page player context menu |
+| `D-Pad (↑ ↓ ← →)` | Navigate UI / Seek **±10s** in player |
+| `OK / Enter` | Select / Open / Play–Pause |
+| `Return / Back` | Close modal / Exit player / Back |
+| `Play / Pause / FF / RW` | Native TV media remote playback controls |
 
 ---
 
 ## 🛠 Development & Build
 
 ### Prerequisites
-- **Rust** (`1.77+`)
-- **Node.js** (`20+`)
-- Platform WebView & media dependencies (e.g. `webkit2gtk-4.1` and `gstreamer1` plugins on Linux)
+- **Rust** (`1.77+`) & **Node.js** (`20+`)
+- For Desktop testing on Linux: `webkit2gtk-4.1` and `gstreamer1` plugins
+- For **Android TV**: Android SDK / NDK + `rustup target add aarch64-linux-android`
+- For **Samsung Tizen**: Tizen Studio CLI (`tizen`, `sdb`)
 
-### Run in Development Mode
+### Desktop Development Preview
 ```bash
 npm install
 npm run tauri dev
 ```
 
-### Build Production Bundles (`.AppImage`, `.deb`, `.rpm`, `.exe`, `.dmg`)
+### Build for Samsung Tizen (`.wgt` staging)
 ```bash
-npm run tauri build
+npm run build:tizen
+# Package with Tizen Studio CLI:
+# tizen package -t wgt -s <certificate_profile> -- dist-tizen
+```
+
+### Build for Android TV (`.apk`)
+```bash
+npx tauri android init
+npx tauri android build
 ```
 
 ---
 
 ## ⚠️ Disclaimer
-**RDX** is an unofficial, open-source third-party desktop client for **HDRezka** developed strictly for educational and personal use. It is not affiliated with or endorsed by HDRezka. This application does **not** host, store, archive, or distribute any copyrighted media files on its own servers — all metadata and video streams are fetched directly from publicly accessible HDRezka mirrors configured by the user.
+**RDX-TV** is an unofficial, open-source third-party client for **HDRezka** developed strictly for educational and personal use. It is not affiliated with or endorsed by HDRezka. This application does **not** host, store, archive, or distribute any copyrighted media files on its own servers — all metadata and video streams are fetched directly from publicly accessible HDRezka mirrors configured by the user.

@@ -51,15 +51,19 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
 
   return (
     <div
+      tabIndex={0}
+      role="button"
+      data-tv-focusable
       onClick={() => onSelect(card)}
+      onFocus={playHoverSound}
       onMouseEnter={playHoverSound}
       className={cn(
-        "group relative flex flex-col cursor-pointer select-none focus:outline-none [contain:layout_style]",
+        "group relative flex flex-col cursor-pointer select-none focus:outline-none rounded-2xl transition-transform duration-150 focus:scale-[1.04] focus:z-10 [contain:layout_style]",
         className
       )}
     >
-      {/* Poster 2:3 container — flat single-layer composite on idle, hardware scale only on hover */}
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl bg-zinc-900 border border-white/10 group-hover:border-rose-500/50 transition-transform duration-150 ease-out group-hover:scale-[1.025] transform-gpu">
+      {/* Poster 2:3 container — flat single-layer composite on idle, hardware scale on focus/hover */}
+      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl bg-zinc-900 border border-white/10 group-hover:border-rose-500/50 group-focus:border-rose-500 group-focus:ring-4 group-focus:ring-rose-500/70 transition-all duration-150 ease-out group-hover:scale-[1.025] transform-gpu">
         <img
           src={card.poster}
           alt={card.title}

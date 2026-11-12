@@ -21,6 +21,7 @@ import { SearchModal } from "./components/SearchModal";
 import { BookmarksView } from "./components/BookmarksView";
 import { CategoryFilterBar } from "./components/CategoryFilterBar";
 import { playButtonClickSound } from "./services/sound";
+import { useTvNavigation } from "./hooks/useTvNavigation";
 
 export default function App() {
   // Navigation & Settings State
@@ -48,6 +49,9 @@ export default function App() {
 
   // Player State
   const [activePlayerDetails, setActivePlayerDetails] = useState<MediaDetails | null>(null);
+
+  // Global TV D-Pad Spatial Navigation (disabled when VideoPlayer owns remote keys)
+  useTvNavigation(Boolean(activePlayerDetails));
   const [playerMode, setPlayerMode] = useState<PlayerMode>("full");
   const [activeTranslatorId, setActiveTranslatorId] = useState<string | undefined>();
   const [activeSeason, setActiveSeason] = useState<number | undefined>();

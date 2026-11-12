@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { MediaCard as MediaCardType } from "../types";
 import { MediaCard } from "./MediaCard";
 import { cn } from "../lib/utils";
@@ -34,13 +34,6 @@ export const Swimlane: React.FC<SwimlaneProps> = React.memo(({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(() => (items ? items.length > 5 : true));
 
-  // Mouse Drag-and-Scroll & Wheel tracking
-  const isMouseDownRef = useRef(false);
-  const startXRef = useRef(0);
-  const scrollLeftRef = useRef(0);
-  const isDraggingRef = useRef(false);
-  const [isDragging, setIsDragging] = useState(false);
-
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -70,76 +63,10 @@ export const Swimlane: React.FC<SwimlaneProps> = React.memo(({
     };
   }, [items]);
 
-  const scroll = (direction: "left" | "right") => {
-    if (scrollRef.current) {
-      const scrollAmount = Math.max(320, scrollRef.current.clientWidth * 0.75);
-      scrollRef.current.scrollBy({
-        left: direction === "left" ? -scrollAmount : scrollAmount,
-        behavior: "smooth",
-      });
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    isMouseDownRef.current = true;
-    startXRef.current = e.pageX;
-    scrollLeftRef.current = scrollRef.current?.scrollLeft || 0;
-    isDraggingRef.current = false;
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isMouseDownRef.current || !scrollRef.current) return;
-    const dx = e.pageX - startXRef.current;
-    if (!isDraggingRef.current && Math.abs(dx) > 6) {
-      isDraggingRef.current = true;
-      setIsDragging(true);
-    }
-    if (isDraggingRef.current) {
-      e.preventDefault();
-      scrollRef.current.scrollLeft = scrollLeftRef.current - dx;
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (!isMouseDownRef.current) return;
-    isMouseDownRef.current = false;
-    if (isDraggingRef.current) {
-      setTimeout(() => {
-        isDraggingRef.current = false;
-        setIsDragging(false);
-      }, 50);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    if (!isMouseDownRef.current) return;
-    isMouseDownRef.current = false;
-    if (isDraggingRef.current) {
-      setTimeout(() => {
-        isDraggingRef.current = false;
-        setIsDragging(false);
-      }, 50);
-    }
-  };
-
-  const handleClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isDraggingRef.current) {
-      e.stopPropagation();
-      e.preventDefault();
-    }
-  };
-
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (!scrollRef.current) return;
     if ((e.shiftKey && e.deltaY !== 0) || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
       scrollRef.current.scrollLeft += e.deltaY || e.deltaX;
-    }
-  };
-
-  const handleChevronWheel = (e: React.WheelEvent) => {
-    if (scrollRef.current && Math.abs(e.deltaY) > 0) {
-      scrollRef.current.scrollLeft += e.deltaY;
     }
   };
 
@@ -215,11 +142,12 @@ export const Swimlane: React.FC<SwimlaneProps> = React.memo(({
 
         {onMoreClick && (
           <button
+            data-tv-focusable
             onClick={() => {
               playButtonClickSound();
               onMoreClick();
             }}
-            className="text-xs font-semibold text-zinc-400 hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors cursor-pointer"
+            className="text-xs font-semibold text-zinc-400 hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:text-white transition-all cursor-pointer"
           >
             <span>Більше</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -227,65 +155,27 @@ export const Swimlane: React.FC<SwimlaneProps> = React.memo(({
         )}
       </div>
 
-      {/* Horizontal Carousel Track with Spotify/Netflix style Floating Navigation & Edge Vignettes */}
+      {/* Horizontal Carousel Track (TV D-pad auto-scrolls on focus; no floating mouse chevrons) */}
       <div className="relative group/track">
         {/* Left Edge Vignette Fade */}
         {canScrollLeft && (
-          <div className="absolute left-0 top-0 bottom-4 w-16 sm:w-24 lg:w-28 z-20 pointer-events-none bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/80 to-transparent transition-opacity duration-200" />
-        )}
-
-        {/* Left Floating Chevron (Spotify style) */}
-        {canScrollLeft && (
-          <button
-            onClick={() => {
-              playButtonClickSound();
-              scroll("left");
-            }}
-            onWheel={handleChevronWheel}
-            aria-label="Прокрутити вліво"
-            className="absolute left-2 sm:left-4 top-[calc(50%-8px)] -translate-y-1/2 z-30 w-11 h-11 rounded-full flex items-center justify-center bg-zinc-950/90 hover:bg-zinc-800 border border-white/20 text-white shadow-2xl backdrop-blur-md transition-all duration-150 hover:scale-110 active:scale-95 cursor-pointer"
-          >
-            <ChevronLeft className="w-6 h-6 stroke-[2.5]" />
-          </button>
+          <div className="absolute left-0 top-0 bottom-4 w-12 sm:w-20 z-20 pointer-events-none bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/70 to-transparent transition-opacity duration-200" />
         )}
 
         {/* Right Edge Vignette Fade */}
         {canScrollRight && (
-          <div className="absolute right-0 top-0 bottom-4 w-16 sm:w-24 lg:w-28 z-20 pointer-events-none bg-gradient-to-l from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/80 to-transparent transition-opacity duration-200" />
-        )}
-
-        {/* Right Floating Chevron (Spotify style) */}
-        {canScrollRight && (
-          <button
-            onClick={() => {
-              playButtonClickSound();
-              scroll("right");
-            }}
-            onWheel={handleChevronWheel}
-            aria-label="Прокрутити вправо"
-            className="absolute right-2 sm:right-4 top-[calc(50%-8px)] -translate-y-1/2 z-30 w-11 h-11 rounded-full flex items-center justify-center bg-zinc-950/90 hover:bg-zinc-800 border border-white/20 text-white shadow-2xl backdrop-blur-md transition-all duration-150 hover:scale-110 active:scale-95 cursor-pointer"
-          >
-            <ChevronRight className="w-6 h-6 stroke-[2.5]" />
-          </button>
+          <div className="absolute right-0 top-0 bottom-4 w-12 sm:w-20 z-20 pointer-events-none bg-gradient-to-l from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/70 to-transparent transition-opacity duration-200" />
         )}
 
         {/* Carousel Track */}
         <div
           ref={scrollRef}
+          data-tv-row={title}
           onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
-          onClickCapture={handleClickCapture}
-          className={cn(
-            "flex gap-4 overflow-x-auto px-[clamp(1.25rem,4vw,4rem)] pb-4 pt-1 no-scrollbar cursor-grab active:cursor-grabbing",
-            isDragging ? "cursor-grabbing select-none" : "scroll-smooth"
-          )}
+          className="flex gap-4 overflow-x-auto px-[clamp(1.25rem,4vw,4rem)] pb-4 pt-2 no-scrollbar scroll-smooth"
           style={{
             scrollbarWidth: "none",
             msOverflowStyle: "none",
-            scrollBehavior: isDragging ? "auto" : undefined,
           }}
         >
           <div ref={startSentinelRef} className="w-px h-1 shrink-0 -mr-4 pointer-events-none opacity-0" aria-hidden="true" />

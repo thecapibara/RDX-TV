@@ -53,12 +53,16 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
 
   return (
     <div
+      tabIndex={0}
+      role="button"
+      data-tv-focusable
+      onClick={handleResumeClick}
+      onFocus={playHoverSound}
       onMouseEnter={playHoverSound}
-      className="group relative flex-shrink-0 w-40 sm:w-44 md:w-48 cursor-pointer select-none [contain:layout_style]"
+      className="group relative flex-shrink-0 w-40 sm:w-44 md:w-48 cursor-pointer select-none rounded-2xl focus:outline-none transition-transform duration-150 focus:scale-[1.04] focus:z-10 [contain:layout_style]"
     >
       <div
-        onClick={handleResumeClick}
-        className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl bg-zinc-900 border border-white/10 shadow-md transition-transform duration-200 ease-out transform-gpu group-hover:scale-[1.025] group-hover:border-rose-500/50"
+        className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl bg-zinc-900 border border-white/10 shadow-md transition-all duration-200 ease-out transform-gpu group-hover:scale-[1.025] group-hover:border-rose-500/50 group-focus:border-rose-500 group-focus:ring-4 group-focus:ring-rose-500/70"
       >
         <img
           src={item.poster_url}

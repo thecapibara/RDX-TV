@@ -101,18 +101,19 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Navigation Tabs (Strictly no horizontal scrollbar or overflow) */}
-        <nav className="flex items-center gap-3 sm:gap-5 lg:gap-6 py-0.5 overflow-x-auto no-scrollbar">
+        <nav data-tv-row="topbar" className="flex items-center gap-3 sm:gap-5 lg:gap-6 py-1 overflow-x-auto no-scrollbar">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                data-tv-focusable
                 onClick={() => {
                   playButtonClickSound();
                   onTabChange(tab.id);
                 }}
                 className={cn(
-                  "relative pb-1 text-xs sm:text-sm lg:text-[15px] tracking-wide transition-colors duration-200 whitespace-nowrap cursor-pointer",
+                  "relative px-2.5 py-1 rounded-xl text-xs sm:text-sm lg:text-[15px] tracking-wide transition-all duration-200 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white/10 focus:text-white",
                   isActive
                     ? "text-white font-semibold"
                     : "text-zinc-400 font-medium hover:text-zinc-100"
@@ -129,24 +130,26 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Right: Actions, Network Status & Clock */}
-      <div className="flex items-center gap-3 sm:gap-5 flex-shrink-0">
+      <div data-tv-row="topbar" className="flex items-center gap-3 sm:gap-5 flex-shrink-0">
         {/* Minimal Search Button */}
         <button
+          data-tv-focusable
           onClick={() => {
             playButtonClickSound();
             onOpenSearch();
           }}
           title="Пошук"
-          className="text-zinc-300 hover:text-white transition-colors cursor-pointer p-1"
+          className="text-zinc-300 hover:text-white transition-all cursor-pointer p-1.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white/10 focus:text-white"
         >
           <Search className="w-5 h-5" />
         </button>
 
         {/* Minimal Mirror Status Button */}
         <button
+          data-tv-focusable
           onClick={onOpenMirrorModal}
           title="Дзеркало HDRezka / Налаштування мережі"
-          className="flex items-center gap-2 text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer p-1"
+          className="flex items-center gap-2 text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer p-1.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white/10 focus:text-white"
         >
           <span
             className={cn(
@@ -163,9 +166,10 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         {/* Settings Gear Button */}
         <button
+          data-tv-focusable
           onClick={onOpenSettings || onOpenMirrorModal}
           title="Налаштування програми"
-          className="text-zinc-300 hover:text-white transition-colors cursor-pointer p-1"
+          className="text-zinc-300 hover:text-white transition-all cursor-pointer p-1.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white/10 focus:text-white"
         >
           <Settings className="w-5 h-5" />
         </button>

@@ -100,8 +100,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           </span>
         </div>
 
-        {/* Navigation Tabs (Strictly no horizontal scrollbar or overflow) */}
-        <nav data-tv-row="topbar" className="flex items-center gap-3 sm:gap-5 lg:gap-6 py-1 overflow-x-auto no-scrollbar">
+        {/* Navigation Tabs (px-1.5 py-1.5 prevents clipping TV focus rings) */}
+        <nav data-tv-row="topbar" className="flex items-center gap-3 sm:gap-5 lg:gap-6 px-1.5 py-1.5 overflow-x-auto no-scrollbar">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (

@@ -182,6 +182,47 @@ function parseCatalogHtml(html: string, baseUrl: string): MediaCard[] {
   return items;
 }
 
+async function solveAnubisChallenge(html: string, targetUrl: string): Promise<boolean> {
+  if (!html.includes("anubis_challenge") && !html.includes("/.within.website/x/cmd/anubis/")) {
+    return false;
+  }
+  const m = html.match(/id=["']anubis_challenge["'][^>]*>([\s\S]*?)<\/script>/);
+  if (!m?.[1]) return false;
+
+  try {
+    const payload = JSON.parse(m[1].trim()) as {
+      rules?: { difficulty?: number };
+      challenge?: { id?: string; randomData?: string; difficulty?: number };
+    };
+    const ch = payload.challenge;
+    if (!ch?.id || !ch?.randomData) return false;
+
+    const difficulty = payload.rules?.difficulty ?? ch.difficulty ?? 4;
+    const prefix = "0".repeat(difficulty);
+    const enc = new TextEncoder();
+    const start = performance.now();
+    let nonce = 0;
+    let hashHex = "";
+
+    while (nonce < 2_000_000) {
+      const buf = await crypto.subtle.digest("SHA-256", enc.encode(`${ch.randomData}${nonce}`));
+      const bytes = new Uint8Array(buf);
+      hashHex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      if (hashHex.startsWith(prefix)) break;
+      nonce++;
+    }
+
+    const parsed = new URL(targetUrl);
+    const redir = `${parsed.pathname || "/"}${parsed.search || ""}`;
+    const elapsed = Math.round(performance.now() - start);
+    const passUrl = `${parsed.origin}/.within.website/x/cmd/anubis/api/pass-challenge?id=${encodeURIComponent(ch.id)}&response=${hashHex}&nonce=${nonce}&redir=${encodeURIComponent(redir)}&elapsedTime=${elapsed}`;
+    await fetch(passUrl, { method: "GET", credentials: "include" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchHtml(url: string): Promise<string> {
   const res = await fetch(url, {
     method: "GET",
@@ -190,8 +231,20 @@ async function fetchHtml(url: string): Promise<string> {
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
   });
+  const text = await res.text();
+  if (await solveAnubisChallenge(text, url)) {
+    const retry = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+    if (!retry.ok) throw new Error(`HTTP ${retry.status} on ${url}`);
+    return retry.text();
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
-  return res.text();
+  return text;
 }
 
 export const tizenRezka = {
@@ -472,5 +525,75 @@ export const tizenRezka = {
       : null;
 
     return { seasons, episodes, stream_data };
+  },
+
+  getBackdrop: async (
+    title: string,
+    origTitle?: string,
+    year?: string,
+    mediaType?: "movie" | "tv"
+  ): Promise<string | null> => {
+    const candidates: string[] = [];
+    if (origTitle) {
+      for (const p of origTitle.split("/").map((s) => s.trim()).filter(Boolean)) {
+        if (!candidates.includes(p)) candidates.push(p);
+      }
+    }
+    for (const p of title.split("/").map((s) => s.trim()).filter(Boolean)) {
+      const clean = p.replace("(все сезоны)", "").replace("(сериал)", "").trim();
+      if (clean && !candidates.includes(clean)) candidates.push(clean);
+    }
+
+    const expectedYear = year ? parseInt(year.slice(0, 4), 10) : NaN;
+    let best: { score: number; url: string } | null = null;
+
+    for (const q of candidates) {
+      try {
+        const res = await fetch(
+          `https://api.themoviedb.org/3/search/multi?api_key=4e44d9029b1270a757cddc766a1bcb63&query=${encodeURIComponent(q)}&include_adult=false&language=uk-UA`
+        );
+        if (!res.ok) continue;
+        const data = (await res.json()) as {
+          results?: Array<{
+            backdrop_path?: string;
+            media_type?: string;
+            vote_count?: number;
+            popularity?: number;
+            release_date?: string;
+            first_air_date?: string;
+          }>;
+        };
+
+        for (const item of data.results || []) {
+          if (!item.backdrop_path) continue;
+          const itemType = item.media_type || "";
+          if (mediaType && (itemType === "movie" || itemType === "tv") && itemType !== mediaType) {
+            continue;
+          }
+          if (!mediaType && itemType === "person") continue;
+
+          let score = (item.vote_count || 0) * 2 + (item.popularity || 0);
+          if (mediaType && itemType === mediaType) score += 20000;
+
+          if (!Number.isNaN(expectedYear)) {
+            const rel = item.release_date || item.first_air_date || "";
+            const iy = parseInt(rel.slice(0, 4), 10);
+            if (!Number.isNaN(iy)) {
+              const diff = Math.abs(iy - expectedYear);
+              if (diff === 0) score += 100000;
+              else if (diff === 1) score += 40000;
+              else score -= 50000;
+            }
+          }
+
+          const url = `https://image.tmdb.org/t/p/original${item.backdrop_path}`;
+          if (!best || score > best.score) best = { score, url };
+        }
+
+        if (best && best.score >= (!Number.isNaN(expectedYear) ? 100000 : 100)) break;
+      } catch {}
+    }
+
+    return best?.url || null;
   },
 };

@@ -671,7 +671,7 @@ export const api = {
         return null;
       }
     }
-    return null;
+    return tizenRezka.getBackdrop(title, origTitle, year, mediaType).catch(() => null);
   },
 
   getSystemTime: async (): Promise<string> => {

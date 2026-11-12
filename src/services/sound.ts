@@ -13,6 +13,17 @@ const isDesktopTauri =
   Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) &&
   !/android/i.test(navigator.userAgent);
 
+type TvSoundKey = "hover" | "modal_open" | "button_click";
+
+const TV_SOUND_PATHS: Record<TvSoundKey, string> = {
+  hover: "/hovercard.mp3",
+  modal_open: "/opencard.mp3",
+  button_click: "/buttonclick.mp3",
+};
+
+const tvAudioBuffers: Partial<Record<TvSoundKey, AudioBuffer>> = {};
+let tvPreloadStarted = false;
+
 // ON by default for TV unless explicitly disabled by the user
 let uiSoundsEnabled: boolean = (() => {
   try {
@@ -42,6 +53,49 @@ function getOrCreateAudioContext(): AudioContext | null {
     return win.__rdxAudioCtx;
   } catch {
     return null;
+  }
+}
+
+function preloadTvAudioBuffers() {
+  if (isDesktopTauri || tvPreloadStarted || typeof window === "undefined") return;
+  tvPreloadStarted = true;
+
+  const ctx = getOrCreateAudioContext();
+  if (!ctx) return;
+
+  (Object.entries(TV_SOUND_PATHS) as Array<[TvSoundKey, string]>).forEach(([key, path]) => {
+    fetch(path)
+      .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error("fetch failed"))))
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((decoded) => {
+        tvAudioBuffers[key] = decoded;
+      })
+      .catch(() => {});
+  });
+}
+
+if (!isDesktopTauri && typeof window !== "undefined") {
+  preloadTvAudioBuffers();
+}
+
+function playTvAudioBuffer(key: TvSoundKey, volume: number): boolean {
+  const ctx = getOrCreateAudioContext();
+  const buffer = tvAudioBuffers[key];
+  if (!ctx || !buffer) {
+    if (!tvPreloadStarted) preloadTvAudioBuffers();
+    return false;
+  }
+  try {
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    src.buffer = buffer;
+    gain.gain.value = volume;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    src.start(0);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -102,6 +156,8 @@ export const playHoverSound = () => {
     return;
   }
 
+  if (playTvAudioBuffer("hover", 0.4)) return;
+
   const ctx = getOrCreateAudioContext();
   if (ctx) playTone(ctx, 540, 280, 0.06, 0.26);
 };
@@ -116,6 +172,8 @@ export const playModalOpenSound = () => {
     api.playUiSound("modal_open");
     return;
   }
+
+  if (playTvAudioBuffer("modal_open", 0.5)) return;
 
   const ctx = getOrCreateAudioContext();
   if (ctx) {
@@ -135,6 +193,8 @@ export const playButtonClickSound = () => {
     return;
   }
 
+  if (playTvAudioBuffer("button_click", 0.5)) return;
+
   const ctx = getOrCreateAudioContext();
   if (ctx) playTone(ctx, 780, 360, 0.045, 0.26);
 };
@@ -149,6 +209,8 @@ export const playBackSound = () => {
     api.playUiSound("button_click");
     return;
   }
+
+  if (playTvAudioBuffer("button_click", 0.4)) return;
 
   const ctx = getOrCreateAudioContext();
   if (ctx) playTone(ctx, 460, 200, 0.065, 0.22);

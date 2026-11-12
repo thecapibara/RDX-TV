@@ -436,6 +436,16 @@
         if (ant) {
           ant.addEventListener("animationstart", playBubbles, { once: true });
         }
+
+        // On Android TV & Samsung Tizen (where native rodio is not active), also play startup.mp3
+        try {
+          var isDesktopTauri = Boolean(window.__TAURI_INTERNALS__) && !/android/i.test(navigator.userAgent);
+          if (!isDesktopTauri && localStorage.getItem("rdx_startup_sound") !== "false") {
+            var a = new Audio("/startup.mp3");
+            a.volume = 0.5;
+            a.play().catch(function() {});
+          }
+        } catch (e) {}
       })();
 
       // Failsafe: guarantee #rdx-splash is dismissed after at most 3s regardless of network or React state

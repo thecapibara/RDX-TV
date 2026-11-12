@@ -658,4 +658,10 @@ export const api = {
       minute: "2-digit",
     });
   },
+
+  playUiSound: (soundType: "hover" | "modal_open" | "button_click") => {
+    if (isTauri) {
+      invoke("play_ui_sound", { soundType }).catch(() => {});
+    }
+  },
 };

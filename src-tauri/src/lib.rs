@@ -1,3 +1,5 @@
+#[cfg(not(target_os = "android"))]
+pub mod audio;
 pub mod cdn;
 pub mod client;
 pub mod commands;
@@ -43,6 +45,15 @@ pub fn run() {
     });
 
     let state = AppState { storage, client, turbo, tmdb };
+
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Ok(settings) = state.storage.get_settings() {
+            if settings.startup_sound {
+                audio::play_startup_sound(None);
+            }
+        }
+    }
 
     tauri::Builder::default()
         .manage(state)
@@ -96,6 +107,7 @@ pub fn run() {
             commands::select_fastest_cdn,
             commands::get_backdrop,
             commands::get_system_time,
+            commands::play_ui_sound,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -589,5 +589,19 @@ pub fn get_system_time() -> String {
     chrono::Local::now().format("%H:%M").to_string()
 }
 
+// ==================== Native UI Audio Commands ====================
+
+#[tauri::command]
+pub fn play_ui_sound(sound_type: String) {
+    #[cfg(not(target_os = "android"))]
+    {
+        crate::audio::play_ui_sound(&sound_type);
+    }
+    #[cfg(target_os = "android")]
+    {
+        let _ = sound_type;
+    }
+}
+
 
 

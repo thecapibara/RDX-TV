@@ -5,7 +5,13 @@
  * inside user gestures just like the boot splash.
  */
 
+import { api } from "./api";
+
 const UI_SOUNDS_KEY = "rdx_tv_ui_sounds";
+const isDesktopTauri =
+  typeof window !== "undefined" &&
+  Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) &&
+  !/android/i.test(navigator.userAgent);
 
 // ON by default for TV unless explicitly disabled by the user
 let uiSoundsEnabled: boolean = (() => {
@@ -91,6 +97,11 @@ export const playHoverSound = () => {
   if (now < lastHoverSoundTime || now - lastHoverSoundTime < 55) return;
   lastHoverSoundTime = now;
 
+  if (isDesktopTauri) {
+    api.playUiSound("hover");
+    return;
+  }
+
   const ctx = getOrCreateAudioContext();
   if (ctx) playTone(ctx, 540, 280, 0.06, 0.26);
 };
@@ -100,6 +111,11 @@ export const playHoverSound = () => {
  */
 export const playModalOpenSound = () => {
   if (!uiSoundsEnabled) return;
+
+  if (isDesktopTauri) {
+    api.playUiSound("modal_open");
+    return;
+  }
 
   const ctx = getOrCreateAudioContext();
   if (ctx) {
@@ -114,6 +130,11 @@ export const playModalOpenSound = () => {
 export const playButtonClickSound = () => {
   if (!uiSoundsEnabled) return;
 
+  if (isDesktopTauri) {
+    api.playUiSound("button_click");
+    return;
+  }
+
   const ctx = getOrCreateAudioContext();
   if (ctx) playTone(ctx, 780, 360, 0.045, 0.26);
 };
@@ -123,6 +144,11 @@ export const playButtonClickSound = () => {
  */
 export const playBackSound = () => {
   if (!uiSoundsEnabled) return;
+
+  if (isDesktopTauri) {
+    api.playUiSound("button_click");
+    return;
+  }
 
   const ctx = getOrCreateAudioContext();
   if (ctx) playTone(ctx, 460, 200, 0.065, 0.22);

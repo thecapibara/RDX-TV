@@ -49,14 +49,15 @@ function detectPlatformAsset(assets: any[]): ReleaseAsset | undefined {
   if (isLinux) {
     match = assets.find((a) => a.name.endsWith(".AppImage")) ||
             assets.find((a) => a.name.endsWith(".deb")) ||
-            assets.find((a) => a.name.endsWith(".tar.gz"));
+            assets.find((a) => a.name.endsWith(".rpm")) ||
+            assets.find((a) => a.name.endsWith(".tar.gz") && !a.name.endsWith(".app.tar.gz"));
   } else if (isWin) {
     match = assets.find((a) => a.name.endsWith(".exe") || a.name.endsWith(".msi"));
   } else if (isMac) {
     match = assets.find((a) => a.name.endsWith(".dmg") || a.name.endsWith(".app.tar.gz"));
   }
 
-  if (!match && assets.length > 0) {
+  if (!match && !isLinux && !isWin && !isMac && assets.length > 0) {
     match = assets[0];
   }
 
@@ -120,6 +121,11 @@ export async function checkForUpdates(
       browser_download_url: a.browser_download_url,
     }));
     const platformAsset = detectPlatformAsset(rawAssets);
+
+    // Avoid prompting automatically while a multi-OS release is still uploading assets
+    if (!force && !platformAsset) {
+      return null;
+    }
 
     return {
       version: latestTag,

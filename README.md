@@ -36,6 +36,15 @@
 
 ---
 
+## 📸 Скріншоти / Screenshots
+
+<p align="center">
+  <b>10-foot картка релізу (Apple TV / Disney+ стиль, D-pad фокус, вибір озвучки та серій)</b><br/>
+  <img src="assets/screenshots/details.jpg" width="100%" alt="RDX-TV Release Details Screen" />
+</p>
+
+---
+
 ## 🎮 TV Remote Controls
 
 | Remote Button | Action |

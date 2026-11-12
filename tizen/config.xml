@@ -3,7 +3,7 @@
     <tizen:application id="rdxTV00001.RDXTV" package="rdxTV00001" required_version="5.5"/>
     <content src="index.html"/>
     <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
-    <icon src="logo.png"/>
+    <icon src="icon-tv.png"/>
     <name>RDX-TV</name>
     <tizen:privilege name="http://tizen.org/privilege/internet"/>
     <tizen:privilege name="http://tizen.org/privilege/network.public"/>

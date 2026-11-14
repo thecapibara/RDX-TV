@@ -54,6 +54,7 @@ jobs:
       - name: Initialize Tauri Android & patch Leanback TV manifest
         run: |
           npx tauri android init
+          npx tauri icon src-tauri/icons/icon.png
           MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           python3 - << 'EOF'
           from pathlib import Path

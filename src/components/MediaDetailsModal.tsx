@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeft,
   Play,
@@ -24,6 +24,9 @@ import { api } from "../services/api";
 import { cn } from "../lib/utils";
 import { playHoverSound, playModalOpenSound, playButtonClickSound, suppressHoverSound } from "../services/sound";
 import { focusFirstInScope, useTvBack } from "../hooks/useTvNavigation";
+import { UaFlag } from "./UaFlag";
+import { Swimlane } from "./Swimlane";
+import { ukrainizeInfoKey, ukrainizeInfoValue } from "../utils/ukrainize";
 
 interface MediaDetailsModalProps {
   media: MediaCard | null;
@@ -38,9 +41,10 @@ interface MediaDetailsModalProps {
   ) => void;
   isBookmarked?: boolean;
   onToggleBookmark?: (bookmark: Bookmark) => void;
+  onSelectMedia?: (card: MediaCard) => void;
 }
 
-type DetailTab = "episodes" | "details";
+type DetailTab = "episodes" | "related" | "details";
 
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   media,
@@ -49,7 +53,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   onPlay,
   isBookmarked = false,
   onToggleBookmark,
+  onSelectMedia,
 }) => {
+  const modalRef = useRef<HTMLDivElement>(null);
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
   const [backdropLoaded, setBackdropLoaded] = useState(false);
@@ -62,7 +68,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [selectedEpisode, setSelectedEpisode] = useState<number>(1);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const [maxKnownSeasons, setMaxKnownSeasons] = useState<number>(1);
-  const [activeTab, setActiveTab] = useState<DetailTab>("details");
+  const [activeTab, setActiveTab] = useState<DetailTab>("related");
+  const [recommendations, setRecommendations] = useState<MediaCard[]>([]);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
 
   // TV D-pad voiceover drawer state
   const [isTranslatorModalOpen, setIsTranslatorModalOpen] = useState(false);
@@ -108,11 +116,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       setBackdropLoaded(false);
       setFetchError(null);
       setIsTranslatorModalOpen(false);
+      setRecommendations([]);
+      setLoadingRecommendations(false);
       return;
     }
 
     let isMounted = true;
     setBackdropLoaded(false);
+    setRecommendations([]);
     playModalOpenSound();
 
     // Try fetching TMDB backdrop immediately in parallel
@@ -152,6 +163,23 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
             if (isMounted && url) setBackdropUrl(url);
           })
           .catch(() => {});
+
+        setLoadingRecommendations(true);
+        api
+          .getTmdbRecommendations(
+            det.title,
+            det.orig_title || undefined,
+            detYear,
+            detMediaType,
+            det.id || media.id
+          )
+          .then((recs) => {
+            if (isMounted) setRecommendations(recs);
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (isMounted) setLoadingRecommendations(false);
+          });
 
         let progress = initialProgress;
         let epProgress = initialEpProgress;
@@ -193,7 +221,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         }
 
         const hasSeasons = Boolean(det.seasons && det.seasons.length > 0);
-        setActiveTab(hasSeasons ? "episodes" : "details");
+        setActiveTab(hasSeasons ? "episodes" : "related");
 
         setDetails(det);
         setSavedProgress(progress);
@@ -373,12 +401,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const fallbackPoster = details?.high_res_poster || details?.poster || media.poster;
 
   // Extract concise metadata badges
-  const yearVal = details?.info_table.find(([k]) => k.toLowerCase().includes("рік") || k.toLowerCase().includes("год"))?.[1];
-  const durationVal = details?.info_table.find(([k]) => k.toLowerCase().includes("тривалість") || k.toLowerCase().includes("время"))?.[1];
-  const genreVal = details?.info_table.find(([k]) => k.toLowerCase().includes("жанр"))?.[1];
+  const rawYearVal = details?.info_table.find(([k]) => k.toLowerCase().includes("рік") || k.toLowerCase().includes("год"))?.[1];
+  const rawDurationVal = details?.info_table.find(([k]) => k.toLowerCase().includes("тривалість") || k.toLowerCase().includes("время"))?.[1];
+  const rawGenreVal = details?.info_table.find(([k]) => k.toLowerCase().includes("жанр"))?.[1];
+  const yearVal = rawYearVal ? ukrainizeInfoValue("рік", rawYearVal) : undefined;
+  const durationVal = rawDurationVal ? ukrainizeInfoValue("тривалість", rawDurationVal) : undefined;
+  const genreVal = rawGenreVal ? ukrainizeInfoValue("жанр", rawGenreVal) : undefined;
 
   return (
     <div
+      ref={modalRef}
       data-tv-scope="modal"
       data-modal-open="true"
       className="fixed inset-0 z-50 bg-[var(--bg-base,#000000)] overflow-y-auto overflow-x-hidden select-none"
@@ -475,7 +507,15 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           )}
 
           {/* Primary TV Action Buttons Row */}
-          <div data-tv-row="details-actions" className="flex items-center gap-3 pt-2 whitespace-nowrap">
+          <div
+            data-tv-row="details-actions"
+            onFocus={() => {
+              requestAnimationFrame(() => {
+                modalRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+              });
+            }}
+            className="flex items-center gap-3 pt-2 whitespace-nowrap"
+          >
             {loading ? (
               <div className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-white/10 text-zinc-200 text-base font-semibold">
                 <Loader2 className="w-5 h-5 animate-spin text-rose-500" />
@@ -594,6 +634,21 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               data-tv-focusable
               onClick={() => {
                 playButtonClickSound();
+                setActiveTab("related");
+              }}
+              className={cn(
+                "text-base font-bold tracking-wider uppercase px-3 py-1.5 rounded-xl transition-all focus:outline-none focus:ring-4 focus:ring-rose-500 cursor-pointer",
+                activeTab === "related"
+                  ? "text-white bg-white/10"
+                  : "text-zinc-400 hover:text-zinc-200"
+              )}
+            >
+              Схожі {recommendations.length > 0 ? `(${recommendations.length})` : ""}
+            </button>
+            <button
+              data-tv-focusable
+              onClick={() => {
+                playButtonClickSound();
                 setActiveTab("details");
               }}
               className={cn(
@@ -696,6 +751,28 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
             </div>
           )}
 
+          {/* Related Tab: TMDB Recommendations */}
+          {activeTab === "related" && (
+            <div className="pt-2">
+              {loadingRecommendations && recommendations.length === 0 ? (
+                <div className="flex items-center gap-3 text-zinc-400 py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-rose-500" />
+                  <span className="text-sm font-medium">Шукаємо схожі фільми та серіали...</span>
+                </div>
+              ) : recommendations.length > 0 ? (
+                <Swimlane
+                  title="Схожі фільми та серіали"
+                  items={recommendations}
+                  onSelectCard={(card) => {
+                    onSelectMedia?.(card);
+                  }}
+                />
+              ) : (
+                <p className="text-sm text-zinc-500 py-8">Схожих фільмів чи серіалів не знайдено.</p>
+              )}
+            </div>
+          )}
+
           {/* Details Tab: Full Description & Info Table */}
           {activeTab === "details" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -708,8 +785,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               <div className="space-y-3 bg-zinc-900/60 border border-white/10 rounded-2xl p-5">
                 {details.info_table.map(([label, value], idx) => (
                   <div key={idx} className="text-sm flex flex-col gap-0.5">
-                    <span className="text-zinc-400 font-medium">{label}</span>
-                    <span className="text-zinc-100 font-semibold">{value}</span>
+                    <span className="text-zinc-400 font-medium">{ukrainizeInfoKey(label)}</span>
+                    <span className="text-zinc-100 font-semibold">{ukrainizeInfoValue(label, value)}</span>
                   </div>
                 ))}
               </div>
@@ -764,13 +841,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       : "bg-zinc-900 text-zinc-300 border-white/10"
                   )}
                 >
-                  🇺🇦 Українські ({ukrTranslators.length})
+                  <span className="inline-flex items-center gap-1.5">
+                    <UaFlag className="w-4 h-3 rounded-[2px] shrink-0" />
+                    <span>Українські ({ukrTranslators.length})</span>
+                  </span>
                 </button>
               )}
             </div>
 
             {/* Translator List */}
-            <div className="overflow-y-auto space-y-2 pr-1">
+            <div className="overflow-y-auto space-y-2 p-1.5">
               {sortedTranslators.map((t, idx) => {
                 const isSelected = selectedTranslator?.id === t.id;
                 return (

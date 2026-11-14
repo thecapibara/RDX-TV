@@ -533,67 +533,181 @@ export const tizenRezka = {
     year?: string,
     mediaType?: "movie" | "tv"
   ): Promise<string | null> => {
-    const candidates: string[] = [];
-    if (origTitle) {
-      for (const p of origTitle.split("/").map((s) => s.trim()).filter(Boolean)) {
-        if (!candidates.includes(p)) candidates.push(p);
+    const match = await resolveTmdbMatch(title, origTitle, year, mediaType);
+    return match?.backdropUrl || null;
+  },
+
+  getTmdbRecommendations: async (
+    baseUrl: string,
+    title: string,
+    origTitle?: string,
+    year?: string,
+    mediaType?: "movie" | "tv",
+    excludeId?: string
+  ): Promise<MediaCard[]> => {
+    const match = await resolveTmdbMatch(title, origTitle, year, mediaType);
+    if (!match) return [];
+
+    const recs: Array<{ title: string; origTitle?: string; year?: string }> = [];
+    const seen = new Set<string>();
+
+    for (const endpoint of ["recommendations", "similar"]) {
+      for (const lang of ["uk-UA", "ru-RU"]) {
+        if (recs.length >= 10) break;
+        try {
+          const res = await fetch(
+            `https://api.themoviedb.org/3/${match.mediaType}/${match.id}/${endpoint}?api_key=4e44d9029b1270a757cddc766a1bcb63&language=${lang}&page=1`
+          );
+          if (!res.ok) continue;
+          const data = (await res.json()) as {
+            results?: Array<{
+              title?: string;
+              name?: string;
+              original_title?: string;
+              original_name?: string;
+              release_date?: string;
+              first_air_date?: string;
+            }>;
+          };
+          for (const item of data.results || []) {
+            const t = (item.title || item.name || "").trim();
+            if (!t || seen.has(t.toLowerCase())) continue;
+            seen.add(t.toLowerCase());
+            const orig = (item.original_title || item.original_name || "").trim() || undefined;
+            const y = (item.release_date || item.first_air_date || "").slice(0, 4) || undefined;
+            recs.push({ title: t, origTitle: orig, year: y });
+            if (recs.length >= 10) break;
+          }
+        } catch {}
+      }
+      if (recs.length >= 10) break;
+    }
+
+    if (recs.length === 0) return [];
+
+    const settled = await Promise.all(
+      recs.map(async (rec) => {
+        let results = await tizenRezka.searchMedia(baseUrl, rec.title).catch(() => []);
+        if (results.length === 0 && rec.origTitle) {
+          results = await tizenRezka.searchMedia(baseUrl, rec.origTitle).catch(() => []);
+        }
+        return (
+          results.find((card) => {
+            if (excludeId && card.id === excludeId) return false;
+            if (mediaType) {
+              const isSeries =
+                card.entity_type.toLowerCase().includes("сериал") ||
+                card.entity_type.toLowerCase().includes("серіал") ||
+                card.url.includes("/series/");
+              if (mediaType === "tv" && !isSeries) return false;
+              if (mediaType === "movie" && isSeries) return false;
+            }
+            if (rec.year && card.misc_info.includes(rec.year)) return true;
+            return true;
+          }) || null
+        );
+      })
+    );
+
+    const out: MediaCard[] = [];
+    const usedIds = new Set<string>();
+    for (const c of settled) {
+      if (c && !usedIds.has(c.id)) {
+        usedIds.add(c.id);
+        out.push(c);
       }
     }
-    for (const p of title.split("/").map((s) => s.trim()).filter(Boolean)) {
-      const clean = p.replace("(все сезоны)", "").replace("(сериал)", "").trim();
-      if (clean && !candidates.includes(clean)) candidates.push(clean);
-    }
+    return out;
+  },
+};
 
-    const expectedYear = year ? parseInt(year.slice(0, 4), 10) : NaN;
-    let best: { score: number; url: string } | null = null;
+async function resolveTmdbMatch(
+  title: string,
+  origTitle?: string,
+  year?: string,
+  mediaType?: "movie" | "tv"
+): Promise<{ id: number; mediaType: "movie" | "tv"; backdropUrl: string | null } | null> {
+  const candidates: Array<{ query: string; isLatin: boolean }> = [];
+  const seenQ = new Set<string>();
+  const addCandidate = (q: string) => {
+    const clean = q.replace("(все сезоны)", "").replace("(сериал)", "").trim();
+    if (!clean || seenQ.has(clean)) return;
+    seenQ.add(clean);
+    const isLatin = /[a-zA-Z]/.test(clean) && !/[а-яА-ЯёЁіІїЇєЄґҐ]/.test(clean);
+    candidates.push({ query: clean, isLatin });
+  };
 
-    for (const q of candidates) {
-      try {
-        const res = await fetch(
-          `https://api.themoviedb.org/3/search/multi?api_key=4e44d9029b1270a757cddc766a1bcb63&query=${encodeURIComponent(q)}&include_adult=false&language=uk-UA`
-        );
-        if (!res.ok) continue;
-        const data = (await res.json()) as {
-          results?: Array<{
-            backdrop_path?: string;
-            media_type?: string;
-            vote_count?: number;
-            popularity?: number;
-            release_date?: string;
-            first_air_date?: string;
-          }>;
-        };
+  if (origTitle) {
+    for (const p of origTitle.split("/")) addCandidate(p);
+  }
+  for (const p of title.split("/")) addCandidate(p);
 
-        for (const item of data.results || []) {
-          if (!item.backdrop_path) continue;
-          const itemType = item.media_type || "";
-          if (mediaType && (itemType === "movie" || itemType === "tv") && itemType !== mediaType) {
-            continue;
-          }
-          if (!mediaType && itemType === "person") continue;
+  const expectedYear = year ? parseInt(year.slice(0, 4), 10) : NaN;
+  const searchTypes: Array<"movie" | "tv"> = mediaType ? [mediaType] : ["movie", "tv"];
+  let best: { score: number; id: number; mediaType: "movie" | "tv"; backdropUrl: string | null } | null = null;
 
-          let score = (item.vote_count || 0) * 2 + (item.popularity || 0);
-          if (mediaType && itemType === mediaType) score += 20000;
+  for (const cand of candidates) {
+    for (const st of searchTypes) {
+      for (const lang of ["uk-UA", "ru-RU"]) {
+        try {
+          const yearParam =
+            !Number.isNaN(expectedYear)
+              ? st === "movie"
+                ? `&year=${expectedYear}`
+                : `&first_air_date_year=${expectedYear}`
+              : "";
+          const res = await fetch(
+            `https://api.themoviedb.org/3/search/${st}?api_key=4e44d9029b1270a757cddc766a1bcb63&query=${encodeURIComponent(cand.query)}&include_adult=false&language=${lang}${yearParam}`
+          );
+          if (!res.ok) continue;
+          const data = (await res.json()) as {
+            results?: Array<{
+              id: number;
+              backdrop_path?: string;
+              original_language?: string;
+              vote_count?: number;
+              popularity?: number;
+              release_date?: string;
+              first_air_date?: string;
+            }>;
+          };
 
-          if (!Number.isNaN(expectedYear)) {
-            const rel = item.release_date || item.first_air_date || "";
-            const iy = parseInt(rel.slice(0, 4), 10);
-            if (!Number.isNaN(iy)) {
-              const diff = Math.abs(iy - expectedYear);
-              if (diff === 0) score += 100000;
-              else if (diff === 1) score += 40000;
-              else score -= 50000;
+          for (const item of data.results || []) {
+            if (!item.backdrop_path) continue;
+            // Filter out non-Cyrillic hits when query was Cyrillic (unless no orig_title)
+            const origLang = item.original_language || "";
+            if (!cand.isLatin && origLang && !["ru", "uk", "be", "bg", "sr"].includes(origLang)) {
+              // Keep only if no better latin candidate exists, with penalty
+            }
+
+            let score = (item.vote_count || 0) * 2 + (item.popularity || 0);
+            if (mediaType && st === mediaType) score += 20000;
+            if (!cand.isLatin && ["ru", "uk", "be"].includes(origLang)) score += 5000;
+
+            if (!Number.isNaN(expectedYear)) {
+              const rel = item.release_date || item.first_air_date || "";
+              const iy = parseInt(rel.slice(0, 4), 10);
+              if (!Number.isNaN(iy)) {
+                const diff = Math.abs(iy - expectedYear);
+                if (diff === 0) score += 100000;
+                else if (diff === 1) score += 40000;
+                else score -= 50000;
+              }
+            }
+
+            const backdropUrl = `https://image.tmdb.org/t/p/original${item.backdrop_path}`;
+            if (!best || score > best.score) {
+              best = { score, id: item.id, mediaType: st, backdropUrl };
             }
           }
 
-          const url = `https://image.tmdb.org/t/p/original${item.backdrop_path}`;
-          if (!best || score > best.score) best = { score, url };
-        }
-
-        if (best && best.score >= (!Number.isNaN(expectedYear) ? 100000 : 100)) break;
-      } catch {}
+          if (best && best.score >= (!Number.isNaN(expectedYear) ? 100000 : 100)) {
+            return best;
+          }
+        } catch {}
+      }
     }
+  }
 
-    return best?.url || null;
-  },
-};
+  return best;
+}

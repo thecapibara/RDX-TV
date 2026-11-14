@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Hls from "hls.js";
 import { motion } from "framer-motion";
+import { UaFlag } from "./UaFlag";
 import {
   Play,
   Pause,
@@ -3339,7 +3340,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                                   )}
                                 >
                                   <span className="truncate flex items-center gap-1.5">
-                                    {isUkr && <span>🇺🇦</span>}
+                                    {isUkr && <UaFlag className="w-4 h-3 rounded-[2px] shrink-0" />}
                                     <span>{t.name}</span>
                                     {t.is_premium && (
                                       <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-0.5 shrink-0">
@@ -4126,7 +4127,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       )}
                     >
                       <span className="truncate flex items-center gap-1.5">
-                        {isUkr && <span>🇺🇦</span>}
+                        {isUkr && <UaFlag className="w-4 h-3 rounded-[2px] shrink-0" />}
                         <span>{t.name}</span>
                         {t.is_premium && (
                           <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-0.5 shrink-0">

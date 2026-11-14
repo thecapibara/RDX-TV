@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { UaFlag } from "./UaFlag";
 import {
   X,
   Server,
@@ -46,7 +47,7 @@ interface MirrorModalProps {
   onCheckUpdates?: () => Promise<boolean> | boolean | void;
 }
 
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.1.2";
 
 const PRESET_MIRRORS = [
   "https://rezka-tv.org",
@@ -67,9 +68,9 @@ const QUALITY_OPTIONS = [
 
 const TRANSLATOR_OPTIONS = [
   { id: "", label: "Авто (Українська пріоритет)" },
-  { id: "Цікава Ідея", label: "Цікава Ідея 🇺🇦" },
-  { id: "НеЗупиняйСкорочення", label: "НеЗупиняйСкорочення 🇺🇦" },
-  { id: "DniproFilm", label: "DniproFilm 🇺🇦" },
+  { id: "Цікава Ідея", label: "Цікава Ідея", isUkr: true },
+  { id: "НеЗупиняйСкорочення", label: "НеЗупиняйСкорочення", isUkr: true },
+  { id: "DniproFilm", label: "DniproFilm", isUkr: true },
   { id: "Original", label: "Оригінал (EN)" },
 ];
 
@@ -689,7 +690,10 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                             : "bg-zinc-950/70 border-white/10 text-zinc-300 hover:text-white"
                         )}
                       >
-                        {tr.label}
+                        <span className="inline-flex items-center gap-2">
+                          {tr.label}
+                          {"isUkr" in tr && tr.isUkr && <UaFlag className="w-4 h-3 rounded-[2px] shrink-0" />}
+                        </span>
                       </button>
                     );
                   })}

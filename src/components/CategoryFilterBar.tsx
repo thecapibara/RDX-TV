@@ -258,21 +258,6 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
             )}
           </div>
         )}
-
-          {/* Clear active genre pill if chosen */}
-          {activeGenre && (
-            <button
-              data-tv-focusable
-              onClick={() => {
-                playButtonClickSound();
-                onGenreChange(null);
-              }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
-            >
-              <span>{activeGenreLabel}</span>
-              <X className="w-3 h-3" />
-            </button>
-          )}
         </div>
       )}
     </div>

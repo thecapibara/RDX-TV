@@ -221,25 +221,30 @@ export default function App() {
 
   // Handle Tab Switch (resets page and category filters)
   const handleTabChange = useCallback((tab: NavTab) => {
+    if (tab === activeTab && categoryPage === 1 && activeGenre === null && activeSort === "last") {
+      return;
+    }
     setActiveTab(tab);
     setCategoryPage(1);
     setActiveGenre(null);
     setActiveSort("last");
     setCategoryItems([]);
-  }, []);
+  }, [activeTab, categoryPage, activeGenre, activeSort]);
 
   // Filter & Sort Change Handlers
   const handleSortChange = useCallback((sort: string) => {
+    if (sort === activeSort && categoryPage === 1) return;
     setActiveSort(sort);
     setCategoryPage(1);
     setCategoryItems([]);
-  }, []);
+  }, [activeSort, categoryPage]);
 
   const handleGenreChange = useCallback((genre: string | null) => {
+    if (genre === activeGenre && categoryPage === 1) return;
     setActiveGenre(genre);
     setCategoryPage(1);
     setCategoryItems([]);
-  }, []);
+  }, [activeGenre, categoryPage]);
 
   // Open Details Modal
   const handleOpenDetails = useCallback(async (card: MediaCardType) => {
@@ -488,7 +493,7 @@ export default function App() {
   }, [refreshContinueWatching]);
 
   return (
-    <div className="min-h-screen bg-[var(--bg-base,#000000)] text-white flex flex-col font-sans selection:bg-rose-500/30 selection:text-white">
+    <div className="h-screen overflow-hidden bg-[var(--bg-base,#000000)] text-white flex flex-col font-sans selection:bg-rose-500/30 selection:text-white">
       {/* Top Android TV Navigation Bar */}
       {!isBackgroundHidden && (
         <TopBar
@@ -503,7 +508,7 @@ export default function App() {
       )}
 
       {/* Main Content Area (hidden when full-screen Details or full-screen VideoPlayer is open so WebKit skips compositing 90 background cards) */}
-      <main className={isBackgroundHidden ? "hidden" : "flex-1 flex flex-col pb-24"}>
+      <main className={isBackgroundHidden ? "hidden" : "flex-1 overflow-y-auto overflow-x-hidden flex flex-col pb-24"}>
         {activeTab === "bookmarks" ? (
           <BookmarksView
             onSelectMedia={handleOpenDetails}
@@ -751,6 +756,7 @@ export default function App() {
         onPlay={handleStartPlayback}
         isBookmarked={isCurrentBookmarked}
         onToggleBookmark={handleToggleBookmark}
+        onSelectMedia={handleOpenDetails}
       />
 
       {/* Spotlight Search Modal */}

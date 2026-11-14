@@ -674,6 +674,37 @@ export const api = {
     return tizenRezka.getBackdrop(title, origTitle, year, mediaType).catch(() => null);
   },
 
+  getTmdbRecommendations: async (
+    title: string,
+    origTitle?: string,
+    year?: string,
+    mediaType?: "movie" | "tv",
+    excludeId?: string
+  ): Promise<MediaCard[]> => {
+    if (isTauri) {
+      try {
+        return await invoke<MediaCard[]>("get_tmdb_recommendations", {
+          title,
+          origTitle,
+          year,
+          mediaType,
+          excludeId,
+        });
+      } catch (e) {
+        console.warn("[TMDB] Failed to get recommendations:", e);
+        return [];
+      }
+    }
+    try {
+      const mirror = await api.getActiveMirror();
+      return await tizenRezka
+        .getTmdbRecommendations(mirror, title, origTitle, year, mediaType, excludeId)
+        .catch(() => []);
+    } catch {
+      return [];
+    }
+  },
+
   getSystemTime: async (): Promise<string> => {
     if (isTauri) {
       try {

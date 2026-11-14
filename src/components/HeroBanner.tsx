@@ -144,9 +144,18 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
               className="w-full h-full object-cover object-center sm:object-[center_20%] opacity-90 transition-transform duration-1000 ease-out group-hover:scale-105 transform-gpu"
             />
             {/* Cinematic Edge Blends */}
-            <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/85 via-40% to-transparent w-full" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-base,#000000)] via-transparent to-[var(--bg-base,#000000)]/30 pointer-events-none" />
-            <div className="absolute inset-x-0 -bottom-px h-44 bg-gradient-to-t from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/90 to-transparent pointer-events-none" />
+            <div
+              className="absolute inset-0 w-full"
+              style={{ background: "linear-gradient(to right, var(--bg-base, #000000) 0%, rgba(0, 0, 0, 0.85) 40%, transparent 100%)" }}
+            />
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ background: "linear-gradient(to top, var(--bg-base, #000000) 0%, transparent 50%, rgba(0, 0, 0, 0.3) 100%)" }}
+            />
+            <div
+              className="absolute inset-x-0 -bottom-px h-44 pointer-events-none"
+              style={{ background: "linear-gradient(to top, var(--bg-base, #000000) 0%, rgba(0, 0, 0, 0.9) 45%, transparent 100%)" }}
+            />
           </motion.div>
         ) : (
           /* 2. Fallback: Ambient Aurora Glow from poster (ZERO pixelation, smooth cinematic glow) */
@@ -172,8 +181,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
       </AnimatePresence>
 
       {/* 3. Text Backdrop Gradient Layer (Ensures maximum legibility on left) */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/90 via-35% md:via-45% to-transparent w-full md:w-4/5 pointer-events-none z-[5]" />
-      <div className="absolute inset-x-0 top-0 -bottom-px bg-gradient-to-t from-[var(--bg-base,#000000)] via-transparent to-transparent pointer-events-none z-[5]" />
+      <div
+        className="absolute inset-0 w-full md:w-4/5 pointer-events-none z-[5]"
+        style={{ background: "linear-gradient(to right, var(--bg-base, #000000) 0%, rgba(0, 0, 0, 0.9) 42%, transparent 100%)" }}
+      />
+      <div
+        className="absolute inset-x-0 top-0 -bottom-px pointer-events-none z-[5]"
+        style={{ background: "linear-gradient(to top, var(--bg-base, #000000) 0%, transparent 55%)" }}
+      />
       {/* Solid 2px bottom seam cover prevents subpixel GPU-layer bleed from transform-gpu backdrop during scroll */}
       <div className="absolute inset-x-0 -bottom-px h-[3px] bg-[var(--bg-base,#000000)] pointer-events-none z-[6]" />
 

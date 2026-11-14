@@ -444,11 +444,20 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
             />
           )}
           {/* Left-to-right cinematic fade so left text & buttons are 100% legible */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/90 via-40% to-transparent" />
+          <div
+            className="absolute inset-0"
+            style={{ background: "linear-gradient(to right, var(--bg-base, #000000) 0%, rgba(0, 0, 0, 0.88) 40%, transparent 100%)" }}
+          />
           {/* Top subtle vignette */}
-          <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[var(--bg-base,#000000)]/70 to-transparent" />
+          <div
+            className="absolute inset-x-0 top-0 h-28"
+            style={{ background: "linear-gradient(to bottom, rgba(0, 0, 0, 0.7) 0%, transparent 100%)" }}
+          />
           {/* Bottom seamless fade into tabs/episodes */}
-          <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/85 to-transparent" />
+          <div
+            className="absolute inset-x-0 bottom-0 h-52"
+            style={{ background: "linear-gradient(to top, var(--bg-base, #000000) 0%, rgba(0, 0, 0, 0.85) 45%, transparent 100%)" }}
+          />
         </div>
 
         {/* Left Content Column (10-foot safe-area padding) */}

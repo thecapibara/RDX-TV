@@ -12,6 +12,10 @@
           var b = localStorage.getItem("rdx_bg_theme") || "oled";
           document.documentElement.setAttribute("data-accent", a);
           document.documentElement.setAttribute("data-bg", b);
+          var cm = navigator.userAgent.match(/Chrome\/(\d+)/);
+          if (cm && parseInt(cm[1], 10) < 90) {
+            document.documentElement.classList.add("rdx-low-gpu");
+          }
         } catch(e) {}
       })();
     </script>
@@ -331,6 +335,44 @@
           transform: translateX(0) scale(1);
           filter: blur(0px);
         }
+      }
+
+      /* Low-GPU / Legacy WebView (< Chrome 90) splash optimization: pure transform+opacity, zero blur */
+      @keyframes rdxHeroLogoInFlat {
+        0% { opacity: 0; transform: scale(0.84) translateY(14px); }
+        70% { opacity: 1; transform: scale(1.03) translateY(-2px); }
+        100% { opacity: 1; transform: scale(1) translateY(0); }
+      }
+      @keyframes rdxCharRevealFlat {
+        0% { opacity: 0; transform: translateY(18px) scale(0.86); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes rdxTvPopFlat {
+        0% { opacity: 0; transform: translateX(-8px) scale(0.76); }
+        65% { opacity: 1; transform: translateX(2px) scale(1.06); }
+        100% { opacity: 1; transform: translateX(0) scale(1); }
+      }
+      .rdx-low-gpu #rdx-splash {
+        transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+      }
+      .rdx-low-gpu #rdx-splash.rdx-splash-hide {
+        filter: none;
+        transform: scale(1.02);
+      }
+      .rdx-low-gpu .rdx-boot-logo-wrap {
+        animation-name: rdxHeroLogoInFlat;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+      }
+      .rdx-low-gpu .rdx-char {
+        filter: none;
+        animation-name: rdxCharRevealFlat;
+      }
+      .rdx-low-gpu .rdx-char-tv {
+        filter: none;
+        animation-name: rdxTvPopFlat;
+      }
+      .rdx-low-gpu .rdx-pulse-ring {
+        box-shadow: none;
       }
     </style>
   </head>

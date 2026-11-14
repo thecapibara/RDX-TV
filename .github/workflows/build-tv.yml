@@ -82,38 +82,41 @@ jobs:
           print("Patched AndroidManifest.xml for Android TV Leanback")
           EOF
 
-      - name: Build Android TV APK (arm64 release)
-        run: npx tauri android build --apk --target aarch64
-
-      - name: Sign & Collect Release APK
+      - name: Build & Sign Android TV APKs (arm64 + armv7 release)
         run: |
           mkdir -p artifacts
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -n 1)
-          if [ -z "$APK" ]; then
-            echo "Release APK not found!"
-            find src-tauri/gen/android/app/build/outputs/apk -type f
-            exit 1
-          fi
           keytool -genkeypair -v -keystore /tmp/rdx-tv.keystore -alias rdxtv \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass rdxtv123 -keypass rdxtv123 \
             -dname "CN=RDX-TV,O=RDX,C=UA"
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
-          "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" /tmp/rdx-aligned.apk
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks /tmp/rdx-tv.keystore \
-            --ks-pass pass:rdxtv123 \
-            --key-pass pass:rdxtv123 \
-            --ks-key-alias rdxtv \
-            --out artifacts/RDX-TV-android-tv-arm64.apk \
-            /tmp/rdx-aligned.apk
+
+          for ARCH in aarch64 armv7; do
+            rm -rf src-tauri/gen/android/app/build/outputs/apk
+            npx tauri android build --apk --target "$ARCH"
+            APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -n 1)
+            if [ -z "$APK" ]; then
+              echo "Release APK not found for $ARCH!"
+              find src-tauri/gen/android/app/build/outputs/apk -type f || true
+              exit 1
+            fi
+            OUT_NAME="RDX-TV-android-tv-${ARCH/aarch64/arm64}.apk"
+            "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "/tmp/rdx-${ARCH}-aligned.apk"
+            "$BUILD_TOOLS/apksigner" sign \
+              --ks /tmp/rdx-tv.keystore \
+              --ks-pass pass:rdxtv123 \
+              --key-pass pass:rdxtv123 \
+              --ks-key-alias rdxtv \
+              --out "artifacts/${OUT_NAME}" \
+              "/tmp/rdx-${ARCH}-aligned.apk"
+          done
           ls -lh artifacts/
 
-      - name: Upload Android TV APK
+      - name: Upload Android TV APKs
         uses: actions/upload-artifact@v4
         with:
           name: RDX-TV-android-tv-apk
-          path: artifacts/RDX-TV-android-tv-arm64.apk
+          path: artifacts/*.apk
 
   build-tizen-bundle:
     name: Samsung Tizen Web Bundle

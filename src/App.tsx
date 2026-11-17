@@ -46,6 +46,7 @@ export default function App() {
   const [isMirrorModalOpen, setIsMirrorModalOpen] = useState(false);
   const [selectedMediaForDetails, setSelectedMediaForDetails] = useState<MediaCardType | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [releaseNotifications, setReleaseNotifications] = useState<Bookmark[]>([]);
 
   // Player State
   const [activePlayerDetails, setActivePlayerDetails] = useState<MediaDetails | null>(null);
@@ -61,6 +62,21 @@ export default function App() {
   // Bookmarks check state for current media
   const [isCurrentBookmarked, setIsCurrentBookmarked] = useState(false);
   const [bookmarksRefreshKey, setBookmarksRefreshKey] = useState(0);
+
+  // Check pending ("В очікуванні") bookmarks for newly released streams on startup
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const released = await api.checkPendingBookmarkReleases();
+        if (released.length > 0) {
+          setReleaseNotifications(released);
+        }
+      } catch (err) {
+        console.warn("Pending bookmark release check error:", err);
+      }
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Global shortcut Ctrl+K / Cmd+K to open search anywhere, even when TopBar is hidden
   useEffect(() => {
@@ -795,6 +811,65 @@ export default function App() {
           }}
           onTranslatorChange={handlePlayerTranslatorChange}
         />
+      )}
+
+      {/* Release Notifications Toast Stack (for bookmarked titles that left "В очікуванні") */}
+      {releaseNotifications.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+          {releaseNotifications.map((bm) => (
+            <div
+              key={bm.media_id}
+              className="pointer-events-auto flex items-center gap-3.5 p-3.5 rounded-2xl bg-zinc-900/95 border border-emerald-500/40 shadow-2xl shadow-black/70 backdrop-blur-xl"
+            >
+              {bm.poster_url && (
+                <img
+                  src={bm.poster_url}
+                  alt={bm.title}
+                  className="w-11 h-16 object-cover rounded-lg border border-white/10 shrink-0"
+                />
+              )}
+              <button
+                data-tv-focusable
+                className="flex-1 min-w-0 text-left focus:outline-none focus:ring-2 focus:ring-emerald-400 rounded-lg p-1 cursor-pointer"
+                onClick={() => {
+                  handleOpenDetails({
+                    id: bm.media_id,
+                    url: bm.media_url,
+                    title: bm.title,
+                    poster: bm.poster_url,
+                    entity_type: bm.media_type,
+                    series_info: null,
+                    misc_info: bm.year_info || "",
+                    rating: bm.rating,
+                  });
+                  setReleaseNotifications((prev) =>
+                    prev.filter((item) => item.media_id !== bm.media_id)
+                  );
+                }}
+              >
+                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                  Вийшло на сайті!
+                </p>
+                <p className="text-sm font-bold text-white truncate">{bm.title}</p>
+                <p className="text-xs text-zinc-400">
+                  З&apos;явився плеєр — натисніть, щоб відкрити
+                </p>
+              </button>
+              <button
+                data-tv-focusable
+                onClick={() =>
+                  setReleaseNotifications((prev) =>
+                    prev.filter((item) => item.media_id !== bm.media_id)
+                  )
+                }
+                title="Закрити"
+                className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-rose-500 transition-colors cursor-pointer shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

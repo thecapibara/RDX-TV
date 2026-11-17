@@ -82,6 +82,56 @@ pub async fn is_bookmarked(state: State<'_, AppState>, media_id: String) -> Resu
 }
 
 #[tauri::command]
+pub async fn check_pending_bookmark_releases(state: State<'_, AppState>) -> Result<Vec<Bookmark>, String> {
+    let pending = state
+        .storage
+        .get_pending_release_bookmarks()
+        .map_err(|e| e.to_string())?;
+    if pending.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mirror = state
+        .storage
+        .get_settings()
+        .map_err(|e| e.to_string())?
+        .active_mirror;
+
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+    let mut set = tokio::task::JoinSet::new();
+
+    for mut bm in pending {
+        let client = state.client.clone();
+        let mirror_clone = mirror.clone();
+        let permit_sem = sem.clone();
+        set.spawn(async move {
+            let _permit = permit_sem.acquire_owned().await.ok();
+            let det = RezkaParser::get_media_details(&client, &mirror_clone, &bm.media_url).await.ok()?;
+            let has_release = !det.translators.is_empty() || det.initial_streams.is_some();
+            if has_release {
+                if !det.poster.is_empty() {
+                    bm.poster_url = det.poster;
+                }
+                bm.awaiting_release = false;
+                Some(bm)
+            } else {
+                None
+            }
+        });
+    }
+
+    let mut released = Vec::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok(Some(bm)) = res {
+            let _ = state.storage.clear_bookmark_awaiting_release(&bm.media_id);
+            released.push(bm);
+        }
+    }
+
+    Ok(released)
+}
+
+#[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -312,20 +362,123 @@ pub async fn get_category_catalog(
     .map_err(|e| e.to_string())
 }
 
+fn phonetic_normalize(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev: Option<char> = None;
+    for ch in s.chars().flat_map(|c| c.to_lowercase()) {
+        let mapped = match ch {
+            'і' | 'ї' | 'ы' => 'и',
+            'ґ' => 'г',
+            'є' | 'ё' => 'е',
+            c if c.is_alphanumeric() => c,
+            _ => ' ',
+        };
+        if mapped == ' ' {
+            if prev != Some(' ') && !out.is_empty() {
+                out.push(' ');
+                prev = Some(' ');
+            }
+            continue;
+        }
+        if prev != Some(mapped) {
+            out.push(mapped);
+            prev = Some(mapped);
+        }
+    }
+    out.trim().to_string()
+}
+
+fn fuzzy_title_score(card_title: &str, targets: &[String]) -> i32 {
+    let norm_card = phonetic_normalize(card_title);
+    let card_tokens: Vec<&str> = norm_card.split_whitespace().collect();
+    let mut best = 0;
+
+    for target in targets {
+        let norm_t = phonetic_normalize(target);
+        if norm_t.is_empty() {
+            continue;
+        }
+        if norm_card == norm_t {
+            best = best.max(1000);
+        } else if norm_card.contains(&norm_t) {
+            best = best.max(600);
+        } else {
+            let t_tokens: Vec<&str> = norm_t.split_whitespace().collect();
+            let mut hits = 0i32;
+            for tt in &t_tokens {
+                if card_tokens.iter().any(|ct| ct.contains(tt) || tt.contains(ct)) {
+                    hits += 1;
+                }
+            }
+            if !t_tokens.is_empty() {
+                best = best.max((hits * 300) / (t_tokens.len() as i32));
+            }
+        }
+    }
+    best
+}
+
 #[tauri::command]
 pub async fn search_media(state: State<'_, AppState>, query: String) -> Result<Vec<MediaCard>, String> {
     let mirror = state.storage.get_settings().map_err(|e| e.to_string())?.active_mirror;
-    RezkaParser::search_media(&state.client, &mirror, &query)
-        .await
-        .map_err(|e| e.to_string())
+    let (direct_res, orig_titles) = tokio::join!(
+        RezkaParser::search_media(&state.client, &mirror, &query),
+        state.tmdb.search_original_titles(&query)
+    );
+
+    let mut combined = direct_res.unwrap_or_default();
+    let mut seen_ids: std::collections::HashSet<String> =
+        combined.iter().map(|c| c.id.clone()).collect();
+
+    if !orig_titles.is_empty() {
+        let mut set = tokio::task::JoinSet::new();
+        for orig in orig_titles.iter().take(3).cloned() {
+            let client = state.client.clone();
+            let mirror_clone = mirror.clone();
+            set.spawn(async move {
+                RezkaParser::search_media(&client, &mirror_clone, &orig)
+                    .await
+                    .unwrap_or_default()
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            if let Ok(cards) = res {
+                for card in cards {
+                    if seen_ids.insert(card.id.clone()) {
+                        combined.push(card);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut targets = vec![query];
+    targets.extend(orig_titles);
+    combined.sort_by(|a, b| {
+        fuzzy_title_score(&b.title, &targets).cmp(&fuzzy_title_score(&a.title, &targets))
+    });
+
+    Ok(combined)
 }
 
 #[tauri::command]
 pub async fn search_autocomplete(state: State<'_, AppState>, query: String) -> Result<Vec<SearchItem>, String> {
     let mirror = state.storage.get_settings().map_err(|e| e.to_string())?.active_mirror;
-    RezkaParser::search_autocomplete(&state.client, &mirror, &query)
+    let direct = RezkaParser::search_autocomplete(&state.client, &mirror, &query)
         .await
-        .map_err(|e| e.to_string())
+        .unwrap_or_default();
+    if !direct.is_empty() {
+        return Ok(direct);
+    }
+
+    let orig_titles = state.tmdb.search_original_titles(&query).await;
+    if let Some(first_orig) = orig_titles.into_iter().next() {
+        return RezkaParser::search_autocomplete(&state.client, &mirror, &first_orig)
+            .await
+            .map_err(|e| e.to_string());
+    }
+
+    Ok(direct)
 }
 
 #[tauri::command]

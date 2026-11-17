@@ -589,6 +589,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     rating: details.imdb_rating || media.rating || null,
                     category: getBookmarkCategory(),
                     added_at: Math.floor(Date.now() / 1000),
+                    awaiting_release: !hasAvailableStream,
                   });
                 }}
                 title={isBookmarked ? "Видалити із закладок" : "Додати в закладки"}

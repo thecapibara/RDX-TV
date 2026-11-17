@@ -47,7 +47,7 @@ interface MirrorModalProps {
   onCheckUpdates?: () => Promise<boolean> | boolean | void;
 }
 
-const APP_VERSION = "1.1.2";
+const APP_VERSION = "1.1.3";
 
 const PRESET_MIRRORS = [
   "https://rezka-tv.org",

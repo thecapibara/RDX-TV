@@ -419,4 +419,99 @@ impl TmdbService {
             .take(10)
             .collect()
     }
+
+    /// Resolves a Ukrainian/Russian/typo search query into top TMDB titles (shared franchise stems + original/localized titles).
+    pub async fn search_original_titles(&self, query: &str) -> Vec<String> {
+        let trimmed = query.trim();
+        if trimmed.len() < 2 {
+            return vec![];
+        }
+        let encoded = urlencoding::encode(trimmed);
+
+        let mut raw_titles: Vec<String> = Vec::new();
+        for lang in ["uk-UA", "ru-RU"] {
+            let url = format!(
+                "{}?api_key={}&query={}&include_adult=false&language={}",
+                TMDB_SEARCH_URL, self.api_key, encoded, lang
+            );
+            let Ok(resp) = self.client.get(&url).send().await else {
+                continue;
+            };
+            let Ok(data) = resp.json::<TmdbSearchResponse>().await else {
+                continue;
+            };
+
+            for item in data
+                .results
+                .into_iter()
+                .filter(|item| item.media_type.as_deref() != Some("person"))
+                .take(6)
+            {
+                for cand in [item.original_title, item.original_name, item.title, item.name] {
+                    if let Some(t) = cand.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                        if !raw_titles.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+                            raw_titles.push(t);
+                        }
+                    }
+                }
+            }
+            if !raw_titles.is_empty() {
+                break;
+            }
+        }
+
+        Self::extract_search_queries(trimmed, &raw_titles)
+    }
+
+    fn extract_search_queries(user_query: &str, raw_titles: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let push_unique = |out: &mut Vec<String>, s: &str| {
+            let t = s.trim();
+            if t.len() >= 2
+                && !t.eq_ignore_ascii_case(user_query)
+                && !out.iter().any(|x| x.eq_ignore_ascii_case(t))
+            {
+                out.push(t.to_string());
+            }
+        };
+
+        for (i, t) in raw_titles.iter().enumerate() {
+            if let Some((prefix, _)) = t.split_once(':') {
+                let p = prefix.trim();
+                if p.len() >= 3
+                    && raw_titles
+                        .iter()
+                        .enumerate()
+                        .any(|(j, other)| i != j && other.starts_with(p))
+                {
+                    push_unique(&mut out, p);
+                }
+            }
+        }
+
+        for (i, t) in raw_titles.iter().enumerate() {
+            let words: Vec<&str> = t.split_whitespace().collect();
+            if words.len() >= 3 {
+                let stem2 = format!("{} {}", words[0], words[1]);
+                if stem2.len() >= 5
+                    && raw_titles
+                        .iter()
+                        .enumerate()
+                        .any(|(j, other)| i != j && other.starts_with(&stem2))
+                {
+                    push_unique(&mut out, &stem2);
+                }
+            }
+        }
+
+        for t in raw_titles {
+            push_unique(&mut out, t);
+            if out.len() >= 3 {
+                break;
+            }
+        }
+
+        out.truncate(3);
+        out
+    }
 }

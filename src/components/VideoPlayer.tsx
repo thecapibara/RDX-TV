@@ -1186,13 +1186,74 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ? video.currentTime
       : initialPositionSec;
 
+    let isEffectCleanedUp = false;
+    let hlsFailedForQuality = false;
+    let mp4FailedForQuality = false;
+    let activeWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+    const clearWatchdog = () => {
+      if (activeWatchdog) {
+        clearTimeout(activeWatchdog);
+        activeWatchdog = null;
+      }
+    };
+
+    const parseRes = (label: string) => {
+      const m = label.match(/\d+/);
+      return m ? parseInt(m[0], 10) : 0;
+    };
+
+    const stepDownQuality = () => {
+      if (isEffectCleanedUp || !streamData?.qualities?.length) return;
+      const curRes = parseRes(selectedQuality.label);
+      const lower = [...streamData.qualities]
+        .filter((q) => q.label !== selectedQuality.label && parseRes(q.label) < curRes)
+        .sort((a, b) => parseRes(b.label) - parseRes(a.label));
+      const nextQuality = lower[0];
+      if (!nextQuality) return;
+      console.warn(`Quality ${selectedQuality.label} unavailable, stepping down to ${nextQuality.label}`);
+      setSelectedQuality(nextQuality);
+      setResumeNotice(`Автоматично перемкнуто на ${nextQuality.label}`);
+      setTimeout(() => setResumeNotice(null), 3500);
+    };
+
+    const failMp4 = () => {
+      if (isEffectCleanedUp) return;
+      clearWatchdog();
+      mp4FailedForQuality = true;
+      if (selectedQuality.hls_url && !hlsFailedForQuality) {
+        startHls(selectedQuality.hls_url);
+      } else {
+        stepDownQuality();
+      }
+    };
+
+    const failHls = () => {
+      if (isEffectCleanedUp) return;
+      clearWatchdog();
+      hlsFailedForQuality = true;
+      if (selectedQuality.mp4_url && !mp4FailedForQuality) {
+        startMp4(selectedQuality.mp4_url);
+      } else {
+        stepDownQuality();
+      }
+    };
+
     const startMp4 = (mp4Url: string) => {
+      clearWatchdog();
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
       video.src = mp4Url;
+      activeWatchdog = setTimeout(() => {
+        if (!isEffectCleanedUp && video.readyState < 2) {
+          console.warn(`MP4 stream (${selectedQuality.label}) timed out after 7s`);
+          failMp4();
+        }
+      }, 7000);
       const onMetadata = () => {
+        clearWatchdog();
         const vidDur = video.duration;
         if (Number.isFinite(vidDur) && vidDur > 0) {
           hlsDurationRef.current = vidDur;
@@ -1210,10 +1271,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         video.play().catch(() => {});
       };
       const onError = () => {
-        if (selectedQuality.hls_url && video.src !== selectedQuality.hls_url) {
-          console.warn("Direct MP4 stream error, falling back to HLS stream:", selectedQuality.hls_url);
-          startHls(selectedQuality.hls_url);
-        }
+        console.warn(`Direct MP4 stream (${selectedQuality.label}) error`);
+        failMp4();
       };
       video.addEventListener("loadedmetadata", onMetadata, { once: true });
       video.addEventListener("error", onError, { once: true });
@@ -1223,6 +1282,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     // Helper to start HLS playback with native startPosition and LEVEL_LOADED duration capture
     const startHls = (hlsUrl: string) => {
+      clearWatchdog();
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -1231,12 +1291,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (Hls.isSupported()) {
         let mediaErrorRecovered = false;
         let networkErrorRetries = 0;
-        let hlsWatchdogTimer: NodeJS.Timeout | null = setTimeout(() => {
-          if (hlsRef.current && (!hlsDurationRef.current || hlsDurationRef.current <= 0) && selectedQuality.mp4_url) {
-            console.warn("HLS manifest/level timed out after 6s, falling back to direct MP4");
+        activeWatchdog = setTimeout(() => {
+          if (hlsRef.current && (!hlsDurationRef.current || hlsDurationRef.current <= 0)) {
+            console.warn(`HLS manifest/level (${selectedQuality.label}) timed out after 6s`);
             hls.destroy();
             hlsRef.current = null;
-            startMp4(selectedQuality.mp4_url);
+            failHls();
           }
         }, 6000);
 
@@ -1258,10 +1318,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         hls.attachMedia(video);
 
         hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
-          if (hlsWatchdogTimer) {
-            clearTimeout(hlsWatchdogTimer);
-            hlsWatchdogTimer = null;
-          }
+          clearWatchdog();
           const totalDur = data.details?.totalduration;
           if (totalDur && Number.isFinite(totalDur) && totalDur > 0) {
             hlsDurationRef.current = totalDur;
@@ -1275,10 +1332,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         });
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (hlsWatchdogTimer) {
-            clearTimeout(hlsWatchdogTimer);
-            hlsWatchdogTimer = null;
-          }
+          clearWatchdog();
           if (prevTime > 0) {
             setCurrentTime(prevTime);
             if (initialPositionSec > 0 && prevTime === initialPositionSec) {
@@ -1304,11 +1358,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 ) {
                   networkErrorRetries++;
                   hls.startLoad();
-                } else if (selectedQuality.mp4_url) {
-                  console.info("HLS network error, falling back to MP4 stream");
+                } else {
                   hls.destroy();
                   hlsRef.current = null;
-                  startMp4(selectedQuality.mp4_url);
+                  failHls();
                 }
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
@@ -1318,19 +1371,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 } else {
                   hls.destroy();
                   hlsRef.current = null;
-                  if (selectedQuality.mp4_url) {
-                    console.info("HLS media error, falling back to MP4 stream");
-                    startMp4(selectedQuality.mp4_url);
-                  }
+                  failHls();
                 }
                 break;
               default:
                 hls.destroy();
                 hlsRef.current = null;
-                if (selectedQuality.mp4_url) {
-                  console.info("HLS fatal error, falling back to MP4 stream");
-                  startMp4(selectedQuality.mp4_url);
-                }
+                failHls();
                 break;
             }
           }
@@ -1354,6 +1401,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
 
     return () => {
+      isEffectCleanedUp = true;
+      clearWatchdog();
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

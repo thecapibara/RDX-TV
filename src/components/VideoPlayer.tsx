@@ -2473,7 +2473,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             getVideoObjectFitClass()
           )}
           style={getVideoStyle()}
-          onWaiting={() => setIsBuffering(true)}
+          onWaiting={() => {
+            if (!videoRef.current?.paused) setIsBuffering(true);
+          }}
           onPlaying={() => {
             setIsBuffering(false);
             if (!isSeekingRef.current) setIsPlaying(true);
@@ -2484,6 +2486,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }}
           onTimeUpdate={() => {
             if (!videoRef.current) return;
+            setIsBuffering((prev) => (prev ? false : prev));
             const time = videoRef.current.currentTime;
             if (!isDraggingSeek && Number.isFinite(time)) {
               const minUiDelta = showControls || showMediaInfo ? 0.25 : 0.9;
@@ -2513,6 +2516,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             setIsSeeking(false);
             if (videoRef.current && !videoRef.current.paused) {
               setIsPlaying(true);
+              setIsBuffering(false);
             }
             syncMprisState(true);
           }}

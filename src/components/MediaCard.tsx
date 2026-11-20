@@ -66,14 +66,15 @@ export const MediaCard: React.FC<MediaCardProps> = React.memo(({
       {/* Poster 2:3 container — flat single-layer composite on idle, hardware scale on focus/hover */}
       <div className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl bg-zinc-900 border border-white/10 group-hover:border-rose-500/50 group-focus:border-rose-500 group-focus:ring-4 group-focus:ring-rose-500/70 transition-all duration-150 ease-out group-hover:scale-[1.025] transform-gpu">
         <img
-          src={card.poster}
-          alt={card.title}
+          src={card.poster || "data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22200%22%20height%3D%22300%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20fill%3D%22%2318181b%22%20width%3D%22200%22%20height%3D%22300%22%2F%3E%3Ctext%20fill%3D%22%2371717a%22%20x%3D%2250%25%22%20y%3D%2250%25%22%20text-anchor%3D%22middle%22%3ERDX%3C%2Ftext%3E%3C%2Fsvg%3E"}
+          alt={card.poster ? card.title : ""}
           draggable={false}
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover pointer-events-none select-none"
           onError={(e) => {
             e.currentTarget.onerror = null;
+            e.currentTarget.alt = "";
             (e.currentTarget as HTMLImageElement).src =
               "data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22200%22%20height%3D%22300%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20fill%3D%22%2318181b%22%20width%3D%22200%22%20height%3D%22300%22%2F%3E%3Ctext%20fill%3D%22%2371717a%22%20x%3D%2250%25%22%20y%3D%2250%25%22%20text-anchor%3D%22middle%22%3ERDX%3C%2Ftext%3E%3C%2Fsvg%3E";
           }}

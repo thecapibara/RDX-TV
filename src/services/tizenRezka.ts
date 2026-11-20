@@ -182,8 +182,102 @@ function parseCatalogHtml(html: string, baseUrl: string): MediaCard[] {
   return items;
 }
 
+function isAnubisHtml(html: string): boolean {
+  return (
+    html.includes("anubis_challenge") ||
+    html.includes("/.within.website/x/cmd/anubis/") ||
+    html.includes("Проверяем, что вы не бот")
+  );
+}
+
+function isCloudflareChallenge(html: string, status: number): boolean {
+  return (
+    status === 403 ||
+    status === 503
+  ) && (
+    html.includes("cf-browser-verification") ||
+    html.includes("challenge-platform") ||
+    html.includes("Just a moment...")
+  );
+}
+
+// Pure-JS SHA-256 fallback for environments where crypto.subtle is unavailable (e.g. file:// on Tizen)
+function sha256PureJs(ascii: string): string {
+  const utf8 = unescape(encodeURIComponent(ascii));
+  const words: number[] = [];
+  for (let i = 0; i < utf8.length; i++) {
+    words[i >> 2] |= utf8.charCodeAt(i) << (24 - (i % 4) * 8);
+  }
+  const bitLen = utf8.length * 8;
+  words[bitLen >> 5] |= 0x80 << (24 - (bitLen % 32));
+  words[(((bitLen + 64) >> 9) << 4) + 15] = bitLen;
+
+  const k = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const w = new Array<number>(64);
+  const rotr = (n: number, x: number) => (x >>> n) | (x << (32 - n));
+
+  for (let j = 0; j < words.length; j += 16) {
+    for (let i = 0; i < 16; i++) w[i] = words[j + i] | 0;
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(7, w[i - 15]) ^ rotr(18, w[i - 15]) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(17, w[i - 2]) ^ rotr(19, w[i - 2]) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(6, e) ^ rotr(11, e) ^ rotr(25, e);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (hh + S1 + ch + k[i] + w[i]) | 0;
+      const S0 = rotr(2, a) ^ rotr(13, a) ^ rotr(22, a);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) | 0;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) | 0;
+    }
+    h[0] = (h[0] + a) | 0;
+    h[1] = (h[1] + b) | 0;
+    h[2] = (h[2] + c) | 0;
+    h[3] = (h[3] + d) | 0;
+    h[4] = (h[4] + e) | 0;
+    h[5] = (h[5] + f) | 0;
+    h[6] = (h[6] + g) | 0;
+    h[7] = (h[7] + hh) | 0;
+  }
+
+  return h.map((v) => (v >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+async function sha256Hex(input: string, enc: TextEncoder): Promise<string> {
+  if (typeof crypto !== "undefined" && crypto.subtle && typeof crypto.subtle.digest === "function") {
+    try {
+      const buf = await crypto.subtle.digest("SHA-256", enc.encode(input));
+      const bytes = new Uint8Array(buf);
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    } catch {
+      // Fallback to pure-JS SHA-256 if subtle.digest fails in non-secure context
+    }
+  }
+  return sha256PureJs(input);
+}
+
 async function solveAnubisChallenge(html: string, targetUrl: string): Promise<boolean> {
-  if (!html.includes("anubis_challenge") && !html.includes("/.within.website/x/cmd/anubis/")) {
+  if (!isAnubisHtml(html)) {
     return false;
   }
   const m = html.match(/id=["']anubis_challenge["'][^>]*>([\s\S]*?)<\/script>/);
@@ -191,60 +285,66 @@ async function solveAnubisChallenge(html: string, targetUrl: string): Promise<bo
 
   try {
     const payload = JSON.parse(m[1].trim()) as {
-      rules?: { difficulty?: number };
+      rules?: { algorithm?: string; difficulty?: number };
       challenge?: { id?: string; randomData?: string; difficulty?: number };
     };
     const ch = payload.challenge;
     if (!ch?.id || !ch?.randomData) return false;
+    const alg = payload.rules?.algorithm?.trim().toLowerCase();
+    if (alg && alg !== "fast") return false;
 
-    const difficulty = payload.rules?.difficulty ?? ch.difficulty ?? 4;
+    const rawDiff = ch.difficulty ?? payload.rules?.difficulty ?? 2;
+    const difficulty = Math.min(6, Math.max(1, rawDiff));
     const prefix = "0".repeat(difficulty);
     const enc = new TextEncoder();
     const start = performance.now();
     let nonce = 0;
     let hashHex = "";
+    let solved = false;
 
     while (nonce < 2_000_000) {
-      const buf = await crypto.subtle.digest("SHA-256", enc.encode(`${ch.randomData}${nonce}`));
-      const bytes = new Uint8Array(buf);
-      hashHex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-      if (hashHex.startsWith(prefix)) break;
+      hashHex = await sha256Hex(`${ch.randomData}${nonce}`, enc);
+      if (hashHex.startsWith(prefix)) {
+        solved = true;
+        break;
+      }
       nonce++;
     }
+    if (!solved) return false;
 
     const parsed = new URL(targetUrl);
     const redir = `${parsed.pathname || "/"}${parsed.search || ""}`;
-    const elapsed = Math.round(performance.now() - start);
+    const elapsed = Math.max(120, Math.min(30_000, Math.round(performance.now() - start)));
     const passUrl = `${parsed.origin}/.within.website/x/cmd/anubis/api/pass-challenge?id=${encodeURIComponent(ch.id)}&response=${hashHex}&nonce=${nonce}&redir=${encodeURIComponent(redir)}&elapsedTime=${elapsed}`;
-    await fetch(passUrl, { method: "GET", credentials: "include" });
-    return true;
+    const passRes = await fetch(passUrl, { method: "GET", credentials: "include" });
+    return passRes.ok || passRes.type === "opaqueredirect";
   } catch {
     return false;
   }
 }
 
 async function fetchHtml(url: string): Promise<string> {
-  const res = await fetch(url, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-  });
-  const text = await res.text();
-  if (await solveAnubisChallenge(text, url)) {
-    const retry = await fetch(url, {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url, {
       method: "GET",
       credentials: "include",
       headers: {
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });
-    if (!retry.ok) throw new Error(`HTTP ${retry.status} on ${url}`);
-    return retry.text();
+    const text = await res.text();
+    if (isCloudflareChallenge(text, res.status)) {
+      throw new Error(`Cloudflare challenge on ${url}`);
+    }
+    if (isAnubisHtml(text)) {
+      const solved = await solveAnubisChallenge(text, url);
+      if (solved) continue;
+      throw new Error(`Anubis challenge unsolved on ${url}`);
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+    return text;
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
-  return text;
+  throw new Error(`Anubis challenge persisted on ${url}`);
 }
 
 export const tizenRezka = {
@@ -252,25 +352,26 @@ export const tizenRezka = {
     const clean = mirrorUrl.replace(/\/+$/, "");
     const start = performance.now();
     try {
-      const res = await fetch(clean, { method: "GET", credentials: "include" });
+      const html = await fetchHtml(clean);
       const latency_ms = Math.round(performance.now() - start);
-      const html = res.ok ? await res.text() : "";
       const hasCatalog = html.includes("b-content__inline_item");
       return {
         mirror_url: clean,
-        online: res.ok,
+        online: true,
         latency_ms,
-        status_message: hasCatalog ? "OK • Пряме" : res.ok ? "Обмежено" : `HTTP ${res.status}`,
+        status_message: hasCatalog ? "OK • Пряме" : "Обмежено",
         doh_bypass: false,
         catalog_available: hasCatalog,
         stream_available: hasCatalog,
       };
-    } catch {
+    } catch (err) {
+      const latency_ms = Math.round(performance.now() - start);
+      const msg = err instanceof Error ? err.message : "";
       return {
         mirror_url: clean,
         online: false,
-        latency_ms: 0,
-        status_message: "Недоступно",
+        latency_ms,
+        status_message: msg.includes("Anubis") || msg.includes("Cloudflare") ? "Anti-Bot" : "Недоступно",
         doh_bypass: false,
         catalog_available: false,
         stream_available: false,
@@ -361,7 +462,11 @@ export const tizenRezka = {
       fullUrl.match(/\/(\d+)-/)?.[1] ||
       "0";
 
-    const title = doc.querySelector('h1[itemprop="name"]')?.textContent?.trim() || "Без назви";
+    const parsedTitle = doc.querySelector('h1[itemprop="name"]')?.textContent?.trim();
+    if (!parsedTitle) {
+      throw new Error("Не вдалося завантажити деталі релізу з дзеркала");
+    }
+    const title = parsedTitle;
     const orig_title = doc.querySelector(".b-post__origtitle")?.textContent?.trim() || null;
     const imgEl = doc.querySelector(".b-sidecover img");
     const poster = resolveUrl(imgEl?.getAttribute("src") || "", clean);

@@ -18,161 +18,30 @@ const isTauri =
   typeof window !== "undefined" &&
   Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 
-// ==================== BROWSER DEMO / MOCK DATA ====================
-
-const MOCK_STREAM_DATA: StreamData = {
-  qualities: [
-    {
-      label: "1080p Ultra",
-      hls_url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-      mp4_url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-    },
-    {
-      label: "1080p",
-      hls_url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-      mp4_url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-    },
-    {
-      label: "720p",
-      hls_url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-      mp4_url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-    },
-    {
-      label: "480p",
-      hls_url: null,
-      mp4_url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-    },
-  ],
-  default_quality: "1080p",
-  subtitles: [
-    {
-      label: "Українські (Оригінал)",
-      url: "data:text/vtt;charset=utf-8,WEBVTT%0A%0A1%0A00%3A00%3A01.000%20--%3E%2000%3A00%3A05.000%0A%D0%9F%D1%80%D0%B8%D1%94%D0%BC%D0%BD%D0%BE%D0%B3%D0%BE%20%D0%BF%D0%B5%D1%80%D0%B5%D0%B3%D0%BB%D1%8F%D0%B4%D1%83%20%D0%B2%20RDX!",
-    },
-  ],
-  thumbnails: null,
-};
-
-const MOCK_CATALOG: MediaCard[] = [
-  {
-    id: "68352",
-    url: "https://rezka-tv.org/films/fiction/68352-dyuna-chastina-druga-2024.html",
-    title: "Дюна: Частина друга",
-    poster: "https://image.tmdb.org/t/p/w500/8b8R8l88Qje9dn9OE8PY05Nxl1X.jpg",
-    entity_type: "movie",
-    series_info: null,
-    misc_info: "2024, США, Фантастика, Пригоди",
-    rating: "8.6",
-  },
-  {
-    id: "54231",
-    url: "https://rezka-tv.org/series/drama/54231-ostanni-z-nas-2023.html",
-    title: "Останні з нас",
-    poster: "https://image.tmdb.org/t/p/w500/uKvVjHNqB5VmOrdxqAt2V7JMrRI.jpg",
-    entity_type: "series",
-    series_info: "2 сезон 1 серія",
-    misc_info: "2023–2025, США, Драма, Жахи, Фантастика",
-    rating: "8.8",
-  },
-  {
-    id: "72140",
-    url: "https://rezka-tv.org/films/action/72140-dedpul-i-rosomaha-2024.html",
-    title: "Дедпул і Росомаха",
-    poster: "https://image.tmdb.org/t/p/w500/8cdWjvZQUExUUTzyp4t6EDMubfO.jpg",
-    entity_type: "movie",
-    series_info: null,
-    misc_info: "2024, США, Бойовик, Комедія",
-    rating: "7.8",
-  },
-  {
-    id: "47231",
-    url: "https://rezka-tv.org/series/fiction/47231-dim-drakona-2022.html",
-    title: "Дім Дракона",
-    poster: "https://image.tmdb.org/t/p/w500/7QMsOTMUswlwxJP0rTTZfmz2tX2.jpg",
-    entity_type: "series",
-    series_info: "2 сезон 8 серія",
-    misc_info: "2022–2024, США, Фентезі, Бойовик, Драма",
-    rating: "8.4",
-  },
-  {
-    id: "61245",
-    url: "https://rezka-tv.org/cartoons/comedy/61245-dumkami-navivorit-2-2024.html",
-    title: "Думками навиворіт 2",
-    poster: "https://image.tmdb.org/t/p/w500/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg",
-    entity_type: "cartoon",
-    series_info: null,
-    misc_info: "2024, США, Мультфільм, Комедія, Сімейний",
-    rating: "7.6",
-  },
-  {
-    id: "52119",
-    url: "https://rezka-tv.org/animation/action/52119-solo-leveling-2024.html",
-    title: "Підняття рівня поодинці",
-    poster: "https://image.tmdb.org/t/p/w500/geCRueV3ElhRTr0xtJuPxJ8ZXq5.jpg",
-    entity_type: "anime",
-    series_info: "2 сезон 6 серія",
-    misc_info: "2024–2025, Японія, Аніме, Бойовик, Фентезі",
-    rating: "8.5",
-  },
-  {
-    id: "59124",
-    url: "https://rezka-tv.org/films/action/59124-gladiator-2-2024.html",
-    title: "Гладіатор 2",
-    poster: "https://image.tmdb.org/t/p/w500/2cxhvwyEwRlysAmRH4iodkvo0z5.jpg",
-    entity_type: "movie",
-    series_info: null,
-    misc_info: "2024, США, Бойовик, Драма, Пригоди",
-    rating: "7.1",
-  },
-  {
-    id: "44120",
-    url: "https://rezka-tv.org/series/comedy/44120-vedmid-the-bear-2022.html",
-    title: "Ведмідь (The Bear)",
-    poster: "https://image.tmdb.org/t/p/w500/53PecQn75727h6k1q3lU7P2m3pG.jpg",
-    entity_type: "series",
-    series_info: "3 сезон 10 серія",
-    misc_info: "2022–2024, США, Драма, Комедія",
-    rating: "8.6",
-  },
+const PRESET_MIRRORS = [
+  "https://rezka-tv.org",
+  "https://hdrezka.me",
+  "https://hdrezka.kim",
+  "https://rezka.pub",
+  "https://rezka.ag",
+  "https://hdrezka.sh",
+  "https://rezkify.com",
+  "https://rezka-ua.org",
+  "https://rezka-ua.tv",
+  "https://hdrezka.club",
 ];
 
 function getStoredProgress(): WatchProgress[] {
   try {
     const raw = localStorage.getItem("rdx_watch_progress");
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw) as WatchProgress[];
+      if (Array.isArray(parsed)) {
+        return parsed.filter((p) => Boolean(p?.title) && p.title !== "Без назви");
+      }
+    }
   } catch {}
-  return [
-    {
-      media_id: "68352",
-      media_url: "https://rezka-tv.org/films/fiction/68352-dyuna-chastina-druga-2024.html",
-      title: "Дюна: Частина друга",
-      orig_title: "Dune: Part Two",
-      poster_url: "https://image.tmdb.org/t/p/w500/8b8R8l88Qje9dn9OE8PY05Nxl1X.jpg",
-      media_type: "movie",
-      translator_id: "1",
-      translator_name: "Цікава Ідея (Укр)",
-      season: null,
-      episode: null,
-      position_sec: 120,
-      duration_sec: 634,
-      updated_at: Math.floor(Date.now() / 1000) - 3600,
-    },
-    {
-      media_id: "54231",
-      media_url: "https://rezka-tv.org/series/drama/54231-ostanni-z-nas-2023.html",
-      title: "Останні з нас",
-      orig_title: "The Last of Us",
-      poster_url: "https://image.tmdb.org/t/p/w500/uKvVjHNqB5VmOrdxqAt2V7JMrRI.jpg",
-      media_type: "series",
-      translator_id: "1",
-      translator_name: "Цікава Ідея (Укр)",
-      season: 1,
-      episode: 3,
-      position_sec: 95,
-      duration_sec: 634,
-      updated_at: Math.floor(Date.now() / 1000) - 7200,
-    },
-  ];
+  return [];
 }
 
 function saveStoredProgress(items: WatchProgress[]) {
@@ -368,10 +237,18 @@ export const api = {
   smartSelectMirror: async (forceRotate = false): Promise<SmartRotationResult> => {
     if (isTauri) return invoke<SmartRotationResult>("smart_select_mirror", { forceRotate });
     const s = await api.getSettings();
-    const candidates = Array.from(new Set([s.active_mirror, ...s.custom_mirrors].filter(Boolean)));
+    const candidates = Array.from(
+      new Set([s.active_mirror, ...PRESET_MIRRORS, ...s.custom_mirrors].filter(Boolean))
+    );
     const statuses = await Promise.all(candidates.map((u) => tizenRezka.checkMirrorStatus(u)));
+    const working = statuses
+      .filter((st) => st.online && st.catalog_available)
+      .sort((a, b) => a.latency_ms - b.latency_ms);
     const best =
-      statuses.find((st) => st.online && st.catalog_available) ||
+      (forceRotate && working.length > 1
+        ? working.find((st) => st.mirror_url !== s.active_mirror)
+        : undefined) ||
+      working[0] ||
       statuses.find((st) => st.online) ||
       statuses[0];
     const selected_mirror = best?.mirror_url || s.active_mirror;
@@ -403,12 +280,11 @@ export const api = {
     if (isTauri) return invoke<MediaCard[]>("get_home_catalog", { filter, genre, page });
     try {
       const mirror = await api.getActiveMirror();
-      const items = await tizenRezka.getHomeCatalog(mirror, filter, genre, page);
-      if (items.length > 0) return items;
+      return await tizenRezka.getHomeCatalog(mirror, filter, genre, page);
     } catch (e) {
-      console.warn("[Tizen] getHomeCatalog direct fetch failed, using fallback:", e);
+      console.warn("[Tizen] getHomeCatalog direct fetch failed:", e);
+      return [];
     }
-    return MOCK_CATALOG;
   },
 
   getCategoryCatalog: async (
@@ -424,26 +300,8 @@ export const api = {
       page,
     };
     if (isTauri) return invoke<MediaCard[]>("get_category_catalog", args);
-    try {
-      const mirror = await api.getActiveMirror();
-      const items = await tizenRezka.getCategoryCatalog(mirror, category, genre, filter, page);
-      if (items.length > 0) return items;
-    } catch (e) {
-      console.warn("[Tizen] getCategoryCatalog direct fetch failed:", e);
-    }
-    if (category === "films") {
-      return MOCK_CATALOG.filter((i) => i.entity_type === "movie");
-    }
-    if (category === "series") {
-      return MOCK_CATALOG.filter((i) => i.entity_type === "series");
-    }
-    if (category === "cartoons") {
-      return MOCK_CATALOG.filter((i) => i.entity_type === "cartoon");
-    }
-    if (category === "animation") {
-      return MOCK_CATALOG.filter((i) => i.entity_type === "anime");
-    }
-    return MOCK_CATALOG;
+    const mirror = await api.getActiveMirror();
+    return await tizenRezka.getCategoryCatalog(mirror, category, genre, filter, page);
   },
 
   searchMedia: async (query: string): Promise<MediaCard[]> => {
@@ -453,13 +311,8 @@ export const api = {
       return await tizenRezka.searchMedia(mirror, query);
     } catch (e) {
       console.warn("[Tizen] searchMedia direct fetch failed:", e);
+      return [];
     }
-    const q = query.toLowerCase();
-    return MOCK_CATALOG.filter(
-      (m) =>
-        m.title.toLowerCase().includes(q) ||
-        m.misc_info.toLowerCase().includes(q)
-    );
   },
 
   searchAutocomplete: async (query: string): Promise<SearchItem[]> => {
@@ -467,96 +320,16 @@ export const api = {
     try {
       const mirror = await api.getActiveMirror();
       return await tizenRezka.searchAutocomplete(mirror, query);
-    } catch {}
-    const q = query.toLowerCase();
-    return MOCK_CATALOG.filter((m) => m.title.toLowerCase().includes(q)).map((m) => ({
-      title: m.title,
-      orig_title: null,
-      year: m.misc_info.split(",")[0] || "2024",
-      entity_type: m.entity_type === "series" ? "Серіал" : "Фільм",
-      rating: m.rating,
-      url: m.url,
-    }));
+    } catch {
+      return [];
+    }
   },
 
   // Media Details & Streaming
   getMediaDetails: async (itemUrl: string): Promise<MediaDetails> => {
     if (isTauri) return invoke<MediaDetails>("get_media_details", { itemUrl });
-    try {
-      const mirror = await api.getActiveMirror();
-      return await tizenRezka.getMediaDetails(mirror, itemUrl);
-    } catch (e) {
-      console.warn("[Tizen] getMediaDetails direct fetch failed:", e);
-    }
-    const found = MOCK_CATALOG.find((m) => m.url === itemUrl) || MOCK_CATALOG[0];
-    const isSeries = found.entity_type === "series";
-
-    return {
-      id: found.id,
-      url: found.url,
-      title: found.title,
-      orig_title: isSeries ? "The Last of Us" : "Dune: Part Two",
-      poster: found.poster,
-      high_res_poster: found.poster,
-      imdb_rating: found.rating || "8.5",
-      kp_rating: "8.3",
-      description:
-        "Захоплююча кіноісторія з неймовірними візуальними ефектами, глибоким сюжетом та бездоганним українським дубляжем. Доступна у якості до 1080p Ultra та 4K з багатоканальним звуком.",
-      info_table: [
-        ["Рік випуску", "2024"],
-        ["Країна", "США, Канада"],
-        ["Жанр", found.misc_info],
-        ["Якість", "1080p Ultra / 4K"],
-        ["Тривалість", isSeries ? "55 хв." : "166 хв."],
-      ],
-      translators: [
-        {
-          id: "1",
-          name: "Цікава Ідея (Укр)",
-          language: "Украинский",
-          is_active: true,
-        },
-        {
-          id: "2",
-          name: "НеЗупиняйСкорочення (Укр)",
-          language: "Українська",
-          is_active: false,
-        },
-        {
-          id: "3",
-          name: "HDRezka Studio",
-          language: "Русский",
-          is_active: false,
-        },
-        {
-          id: "4",
-          name: "Original (English)",
-          language: "Английский",
-          is_active: false,
-        },
-      ],
-      seasons: isSeries
-        ? [
-            { id: "1", title: "1 сезон" },
-            { id: "2", title: "2 сезон" },
-          ]
-        : [],
-      episodes: isSeries
-        ? [
-            { season_id: "1", episode_id: "1", title: "1 серія" },
-            { season_id: "1", episode_id: "2", title: "2 серія" },
-            { season_id: "1", episode_id: "3", title: "3 серія" },
-            { season_id: "1", episode_id: "4", title: "4 серія" },
-            { season_id: "1", episode_id: "5", title: "5 серія" },
-            { season_id: "1", episode_id: "6", title: "6 серія" },
-            { season_id: "1", episode_id: "7", title: "7 серія" },
-            { season_id: "1", episode_id: "8", title: "8 серія" },
-            { season_id: "2", episode_id: "1", title: "1 серія" },
-            { season_id: "2", episode_id: "2", title: "2 серія" },
-          ]
-        : [],
-      initial_streams: MOCK_STREAM_DATA,
-    };
+    const mirror = await api.getActiveMirror();
+    return await tizenRezka.getMediaDetails(mirror, itemUrl);
   },
 
   getStream: async (
@@ -576,13 +349,8 @@ export const api = {
       refererUrl,
     };
     if (isTauri) return invoke<StreamData>("get_stream", args);
-    try {
-      const mirror = await api.getActiveMirror();
-      return await tizenRezka.getStream(mirror, mediaId, isSeries, translatorId, season, episode);
-    } catch (e) {
-      console.warn("[Tizen] getStream direct fetch failed:", e);
-    }
-    return MOCK_STREAM_DATA;
+    const mirror = await api.getActiveMirror();
+    return await tizenRezka.getStream(mirror, mediaId, isSeries, translatorId, season, episode);
   },
 
   getEpisodes: async (
@@ -592,26 +360,8 @@ export const api = {
   ): Promise<EpisodesData> => {
     const args = { mediaId, translatorId, refererUrl };
     if (isTauri) return invoke<EpisodesData>("get_episodes", args);
-    try {
-      const mirror = await api.getActiveMirror();
-      return await tizenRezka.getEpisodes(mirror, mediaId, translatorId);
-    } catch (e) {
-      console.warn("[Tizen] getEpisodes direct fetch failed:", e);
-    }
-    return {
-      seasons: [
-        { id: "1", title: "1 сезон" },
-        { id: "2", title: "2 сезон" },
-      ],
-      episodes: [
-        { season_id: "1", episode_id: "1", title: "1 серія" },
-        { season_id: "1", episode_id: "2", title: "2 серія" },
-        { season_id: "1", episode_id: "3", title: "3 серія" },
-        { season_id: "1", episode_id: "4", title: "4 серія" },
-        { season_id: "2", episode_id: "1", title: "1 серія" },
-      ],
-      stream_data: MOCK_STREAM_DATA,
-    };
+    const mirror = await api.getActiveMirror();
+    return await tizenRezka.getEpisodes(mirror, mediaId, translatorId);
   },
 
   // Window & Player Helpers

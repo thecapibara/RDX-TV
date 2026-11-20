@@ -117,6 +117,11 @@ export default function App() {
           homeList = retryResults[0];
           watchingList = retryResults[1];
         }
+        if (homeList.length === 0) {
+          setCatalogError(
+            "Не вдалося завантажити каталог з дзеркала HDRezka. Оберіть інше дзеркало або перевірте підключення."
+          );
+        }
         setHomeItems(homeList);
         setWatchingHeroItems(watchingList);
       } else if (activeTab !== "bookmarks") {

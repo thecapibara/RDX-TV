@@ -323,20 +323,96 @@ async function solveAnubisChallenge(html: string, targetUrl: string): Promise<bo
   }
 }
 
+const DEFAULT_TIZEN_RELAY_URL = (
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_TIZEN_RELAY_URL || ""
+).trim();
+
+function getActiveRelayUrl(): string {
+  try {
+    const raw = localStorage.getItem("rdx_settings");
+    if (raw) {
+      const parsed = JSON.parse(raw) as { proxy_url?: string };
+      const p = (parsed.proxy_url || "").trim();
+      if (p.startsWith("http://") || p.startsWith("https://")) {
+        return p.replace(/\/+$/, "");
+      }
+    }
+  } catch {}
+  return DEFAULT_TIZEN_RELAY_URL.replace(/\/+$/, "");
+}
+
+function buildFetchArgs(
+  targetUrl: string,
+  method: "GET" | "POST",
+  headers: Record<string, string>,
+  body?: string
+): { url: string; init: RequestInit; viaRelay: boolean } {
+  const relay = getActiveRelayUrl();
+  if (relay) {
+    let referer = "";
+    try {
+      referer = `${new URL(targetUrl).origin}/`;
+    } catch {}
+    const relayHeaders: Record<string, string> = {};
+    if (headers["Content-Type"]) relayHeaders["Content-Type"] = headers["Content-Type"];
+    if (referer) relayHeaders["X-RDX-Referer"] = referer;
+    return {
+      url: `${relay}/?url=${encodeURIComponent(targetUrl)}`,
+      init: {
+        method,
+        headers: relayHeaders,
+        body,
+      },
+      viaRelay: true,
+    };
+  }
+  return {
+    url: targetUrl,
+    init: {
+      method,
+      credentials: "include",
+      headers,
+      body,
+    },
+    viaRelay: false,
+  };
+}
+
 async function fetchHtml(url: string): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(url, {
-      method: "GET",
-      credentials: "include",
-      headers: {
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
+    const req = buildFetchArgs(url, "GET", {
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     });
+    const res = await fetch(req.url, req.init);
     const text = await res.text();
     if (isCloudflareChallenge(text, res.status)) {
       throw new Error(`Cloudflare challenge on ${url}`);
     }
+    if (!req.viaRelay && isAnubisHtml(text)) {
+      const solved = await solveAnubisChallenge(text, url);
+      if (solved) continue;
+      throw new Error(`Anubis challenge unsolved on ${url}`);
+    }
     if (isAnubisHtml(text)) {
+      throw new Error(`Anubis challenge persisted on ${url}`);
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+    return text;
+  }
+  throw new Error(`Anubis challenge persisted on ${url}`);
+}
+
+async function postForm(url: string, body: string): Promise<string> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const req = buildFetchArgs(
+      url,
+      "POST",
+      { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    );
+    const res = await fetch(req.url, req.init);
+    const text = await res.text();
+    if (!req.viaRelay && isAnubisHtml(text)) {
       const solved = await solveAnubisChallenge(text, url);
       if (solved) continue;
       throw new Error(`Anubis challenge unsolved on ${url}`);
@@ -351,6 +427,7 @@ export const tizenRezka = {
   checkMirrorStatus: async (mirrorUrl: string): Promise<MirrorStatus> => {
     const clean = mirrorUrl.replace(/\/+$/, "");
     const start = performance.now();
+    const viaRelay = Boolean(getActiveRelayUrl());
     try {
       const html = await fetchHtml(clean);
       const latency_ms = Math.round(performance.now() - start);
@@ -359,8 +436,12 @@ export const tizenRezka = {
         mirror_url: clean,
         online: true,
         latency_ms,
-        status_message: hasCatalog ? "OK • Пряме" : "Обмежено",
-        doh_bypass: false,
+        status_message: hasCatalog
+          ? viaRelay
+            ? "OK • Relay"
+            : "OK • Пряме"
+          : "Обмежено",
+        doh_bypass: viaRelay,
         catalog_available: hasCatalog,
         stream_available: hasCatalog,
       };
@@ -372,7 +453,7 @@ export const tizenRezka = {
         online: false,
         latency_ms,
         status_message: msg.includes("Anubis") || msg.includes("Cloudflare") ? "Anti-Bot" : "Недоступно",
-        doh_bypass: false,
+        doh_bypass: viaRelay,
         catalog_available: false,
         stream_available: false,
       };
@@ -426,14 +507,12 @@ export const tizenRezka = {
   searchAutocomplete: async (baseUrl: string, query: string): Promise<SearchItem[]> => {
     const clean = baseUrl.replace(/\/+$/, "");
     const body = new URLSearchParams({ q: query });
-    const res = await fetch(`${clean}/engine/ajax/search.php`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
-    if (!res.ok) return [];
-    const html = await res.text();
+    let html: string;
+    try {
+      html = await postForm(`${clean}/engine/ajax/search.php`, body.toString());
+    } catch {
+      return [];
+    }
     const doc = new DOMParser().parseFromString(html, "text/html");
     return Array.from(doc.querySelectorAll(".b-search__section_list li")).map((li) => {
       const a = li.querySelector("a") as HTMLAnchorElement | null;
@@ -561,14 +640,11 @@ export const tizenRezka = {
       params.set("action", "get_movie");
     }
 
-    const res = await fetch(`${clean}/ajax/get_cdn_series/?t=${Date.now()}`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params.toString(),
-    });
-    if (!res.ok) throw new Error(`Stream AJAX HTTP ${res.status}`);
-    const data = (await res.json()) as {
+    const rawText = await postForm(
+      `${clean}/ajax/get_cdn_series/?t=${Date.now()}`,
+      params.toString()
+    );
+    const data = JSON.parse(rawText) as {
       success?: boolean;
       url?: string;
       subtitle?: string;
@@ -592,14 +668,11 @@ export const tizenRezka = {
       translator_id: translatorId,
       action: "get_episodes",
     });
-    const res = await fetch(`${clean}/ajax/get_cdn_series/?t=${Date.now()}`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params.toString(),
-    });
-    if (!res.ok) throw new Error(`Episodes AJAX HTTP ${res.status}`);
-    const data = (await res.json()) as {
+    const rawText = await postForm(
+      `${clean}/ajax/get_cdn_series/?t=${Date.now()}`,
+      params.toString()
+    );
+    const data = JSON.parse(rawText) as {
       seasons?: string;
       episodes?: string;
       url?: string;

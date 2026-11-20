@@ -136,6 +136,8 @@ jobs:
         run: npm ci
 
       - name: Build Tizen dist
+        env:
+          VITE_TIZEN_RELAY_URL: ${{ secrets.VITE_TIZEN_RELAY_URL }}
         run: npm run build:tizen
 
       - name: Package Tizen staging archive

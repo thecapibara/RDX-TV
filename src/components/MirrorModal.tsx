@@ -47,7 +47,7 @@ interface MirrorModalProps {
   onCheckUpdates?: () => Promise<boolean> | boolean | void;
 }
 
-const APP_VERSION = "1.1.3";
+const APP_VERSION = "1.1.5";
 
 const PRESET_MIRRORS = [
   "https://rezka-tv.org",
@@ -56,6 +56,10 @@ const PRESET_MIRRORS = [
   "https://rezka.pub",
   "https://rezka.ag",
   "https://hdrezka.sh",
+  "https://rezkify.com",
+  "https://rezka-ua.org",
+  "https://rezka-ua.tv",
+  "https://hdrezka.club",
 ];
 
 const QUALITY_OPTIONS = [
@@ -528,7 +532,9 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                                   : "bg-rose-500/15 text-rose-300"
                               )}
                             >
-                              {status.online ? `${status.latency_ms} ms` : "Офлайн"}
+                              {status.online
+                                ? `${status.latency_ms} ms`
+                                : status.status_message || "Офлайн"}
                             </span>
                           )}
                           {isActive && (
@@ -589,7 +595,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
               <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-bold text-white">
                   <Shield className="w-4 h-4 text-zinc-400" />
-                  <span>HTTP / SOCKS5 Проксі (Опціонально)</span>
+                  <span>RDX Relay / HTTP / SOCKS5 Проксі (Опціонально)</span>
                 </div>
                 <div className="flex gap-3">
                   <input
@@ -597,7 +603,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                     value={proxyInput}
                     onChange={(e) => setProxyInput(e.target.value)}
                     data-tv-focusable
-                    placeholder="socks5://127.0.0.1:9050 або http://host:port"
+                    placeholder="https://your-relay.workers.dev або socks5://127.0.0.1:9050"
                     className="flex-1 px-4 py-3 rounded-xl bg-zinc-950 border border-white/15 text-white placeholder-zinc-500 text-sm focus:outline-none focus:ring-4 focus:ring-rose-500"
                   />
                   <button

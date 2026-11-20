@@ -214,7 +214,11 @@ export default {
     const method = request.method === "POST" ? "POST" : "GET";
     const bodyText = method === "POST" ? await request.text() : undefined;
     const contentType = request.headers.get("Content-Type") || undefined;
-    const referer = request.headers.get("X-RDX-Referer") || `${parsedTarget.origin}/`;
+    const refParam = reqUrl.searchParams.get("ref");
+    const referer =
+      (refParam && /^https?:\/\//i.test(refParam) ? refParam : null) ||
+      request.headers.get("X-RDX-Referer") ||
+      `${parsedTarget.origin}/`;
 
     try {
       return await fetchWithAnubis(parsedTarget.toString(), method, contentType, bodyText, referer);

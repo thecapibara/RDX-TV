@@ -342,27 +342,62 @@ function getActiveRelayUrl(): string {
   return DEFAULT_TIZEN_RELAY_URL.replace(/\/+$/, "");
 }
 
+const FETCH_TIMEOUT_MS = 12_000;
+const DIRECT_FALLBACK_TIMEOUT_MS = 8_000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = FETCH_TIMEOUT_MS
+): Promise<Response> {
+  if (typeof AbortController !== "undefined") {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error(`Timeout (${Math.round(timeoutMs / 1000)}s)`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return await Promise.race([
+    fetch(url, init),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs)
+    ),
+  ]);
+}
+
 function buildFetchArgs(
   targetUrl: string,
   method: "GET" | "POST",
   headers: Record<string, string>,
-  body?: string
+  body?: string,
+  forceDirect = false
 ): { url: string; init: RequestInit; viaRelay: boolean } {
-  const relay = getActiveRelayUrl();
+  const relay = forceDirect ? "" : getActiveRelayUrl();
   if (relay) {
     let referer = "";
     try {
       referer = `${new URL(targetUrl).origin}/`;
     } catch {}
+    // Keep relay requests CORS-simple (no custom headers like X-RDX-Referer)
+    // so Samsung Tizen WebView (file://, Origin: null) never triggers failing OPTIONS preflights.
     const relayHeaders: Record<string, string> = {};
-    if (headers["Content-Type"]) relayHeaders["Content-Type"] = headers["Content-Type"];
-    if (referer) relayHeaders["X-RDX-Referer"] = referer;
+    if (method === "POST" && headers["Content-Type"]) {
+      relayHeaders["Content-Type"] = headers["Content-Type"];
+    }
+    const refQuery = referer ? `&ref=${encodeURIComponent(referer)}` : "";
     return {
-      url: `${relay}/?url=${encodeURIComponent(targetUrl)}`,
+      url: `${relay}/?url=${encodeURIComponent(targetUrl)}${refQuery}`,
       init: {
         method,
-        headers: relayHeaders,
-        body,
+        ...(Object.keys(relayHeaders).length > 0 ? { headers: relayHeaders } : {}),
+        ...(body !== undefined ? { body } : {}),
       },
       viaRelay: true,
     };
@@ -379,12 +414,20 @@ function buildFetchArgs(
   };
 }
 
-async function fetchHtml(url: string): Promise<string> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const req = buildFetchArgs(url, "GET", {
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    });
-    const res = await fetch(req.url, req.init);
+async function fetchHtmlOnce(url: string, forceDirect: boolean): Promise<string> {
+  const attempts = forceDirect ? 2 : 2;
+  const timeoutMs = forceDirect ? DIRECT_FALLBACK_TIMEOUT_MS : FETCH_TIMEOUT_MS;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const req = buildFetchArgs(
+      url,
+      "GET",
+      {
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      undefined,
+      forceDirect
+    );
+    const res = await fetchWithTimeout(req.url, req.init, timeoutMs);
     const text = await res.text();
     if (isCloudflareChallenge(text, res.status)) {
       throw new Error(`Cloudflare challenge on ${url}`);
@@ -403,15 +446,34 @@ async function fetchHtml(url: string): Promise<string> {
   throw new Error(`Anubis challenge persisted on ${url}`);
 }
 
-async function postForm(url: string, body: string): Promise<string> {
+async function fetchHtml(url: string): Promise<string> {
+  const hasRelay = Boolean(getActiveRelayUrl());
+  if (!hasRelay) {
+    return fetchHtmlOnce(url, true);
+  }
+  try {
+    return await fetchHtmlOnce(url, false);
+  } catch (relayErr) {
+    // Fallback to direct fetch in case the relay is unreachable or blocked by ISP/CORS on TV
+    try {
+      return await fetchHtmlOnce(url, true);
+    } catch {
+      throw relayErr;
+    }
+  }
+}
+
+async function postFormOnce(url: string, body: string, forceDirect: boolean): Promise<string> {
+  const timeoutMs = forceDirect ? DIRECT_FALLBACK_TIMEOUT_MS : FETCH_TIMEOUT_MS;
   for (let attempt = 0; attempt < 2; attempt++) {
     const req = buildFetchArgs(
       url,
       "POST",
       { "Content-Type": "application/x-www-form-urlencoded" },
-      body
+      body,
+      forceDirect
     );
-    const res = await fetch(req.url, req.init);
+    const res = await fetchWithTimeout(req.url, req.init, timeoutMs);
     const text = await res.text();
     if (!req.viaRelay && isAnubisHtml(text)) {
       const solved = await solveAnubisChallenge(text, url);
@@ -422,6 +484,32 @@ async function postForm(url: string, body: string): Promise<string> {
     return text;
   }
   throw new Error(`Anubis challenge persisted on ${url}`);
+}
+
+async function postForm(url: string, body: string): Promise<string> {
+  const hasRelay = Boolean(getActiveRelayUrl());
+  if (!hasRelay) {
+    return postFormOnce(url, body, true);
+  }
+  try {
+    return await postFormOnce(url, body, false);
+  } catch (relayErr) {
+    try {
+      return await postFormOnce(url, body, true);
+    } catch {
+      throw relayErr;
+    }
+  }
+}
+
+function formatMirrorError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err || "");
+  if (msg.includes("Anubis") || msg.includes("Cloudflare")) return "Anti-Bot";
+  if (msg.includes("Timeout") || msg.includes("AbortError")) return "Таймаут";
+  const httpMatch = msg.match(/HTTP\s+(\d{3})/);
+  if (httpMatch) return `HTTP ${httpMatch[1]}`;
+  if (/failed to fetch|network|cors|load failed/i.test(msg)) return "Мережа/CORS";
+  return "Недоступно";
 }
 
 export const tizenRezka = {
@@ -448,12 +536,11 @@ export const tizenRezka = {
       };
     } catch (err) {
       const latency_ms = Math.round(performance.now() - start);
-      const msg = err instanceof Error ? err.message : "";
       return {
         mirror_url: clean,
         online: false,
         latency_ms,
-        status_message: msg.includes("Anubis") || msg.includes("Cloudflare") ? "Anti-Bot" : "Недоступно",
+        status_message: formatMirrorError(err),
         doh_bypass: viaRelay,
         catalog_available: false,
         stream_available: false,

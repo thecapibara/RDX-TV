@@ -80,6 +80,23 @@ function upsertStoredEpisodeProgress(mediaId: string, item: EpisodeProgress) {
   } catch {}
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const current = nextIndex++;
+      results[current] = await worker(items[current]);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 // ==================== UNIFIED API ====================
 
 export const api = {
@@ -231,7 +248,7 @@ export const api = {
 
   checkAllMirrors: async (mirrorUrls: string[]): Promise<MirrorStatus[]> => {
     if (isTauri) return invoke<MirrorStatus[]>("check_all_mirrors", { mirrorUrls });
-    return Promise.all(mirrorUrls.map((url) => tizenRezka.checkMirrorStatus(url)));
+    return mapWithConcurrency(mirrorUrls, 3, (url) => tizenRezka.checkMirrorStatus(url));
   },
 
   smartSelectMirror: async (forceRotate = false): Promise<SmartRotationResult> => {
@@ -240,7 +257,9 @@ export const api = {
     const candidates = Array.from(
       new Set([s.active_mirror, ...PRESET_MIRRORS, ...s.custom_mirrors].filter(Boolean))
     );
-    const statuses = await Promise.all(candidates.map((u) => tizenRezka.checkMirrorStatus(u)));
+    const statuses = await mapWithConcurrency(candidates, 3, (u) =>
+      tizenRezka.checkMirrorStatus(u)
+    );
     const working = statuses
       .filter((st) => st.online && st.catalog_available)
       .sort((a, b) => a.latency_ms - b.latency_ms);

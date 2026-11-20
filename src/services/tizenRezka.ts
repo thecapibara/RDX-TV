@@ -324,7 +324,8 @@ async function solveAnubisChallenge(html: string, targetUrl: string): Promise<bo
 }
 
 const DEFAULT_TIZEN_RELAY_URL = (
-  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_TIZEN_RELAY_URL || ""
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_TIZEN_RELAY_URL ||
+  "https://rdx-tv-relay.thecapibara-rdxtv.workers.dev"
 ).trim();
 
 function getActiveRelayUrl(): string {

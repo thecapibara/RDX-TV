@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { RefreshCw, AlertCircle } from "lucide-react";
 import type {
   AppSettings,
@@ -21,7 +21,7 @@ import { SearchModal } from "./components/SearchModal";
 import { BookmarksView } from "./components/BookmarksView";
 import { CategoryFilterBar } from "./components/CategoryFilterBar";
 import { playButtonClickSound } from "./services/sound";
-import { useTvNavigation } from "./hooks/useTvNavigation";
+import { useTvNavigation, useTvBack } from "./hooks/useTvNavigation";
 
 export default function App() {
   // Navigation & Settings State
@@ -47,9 +47,37 @@ export default function App() {
   const [selectedMediaForDetails, setSelectedMediaForDetails] = useState<MediaCardType | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [releaseNotifications, setReleaseNotifications] = useState<Bookmark[]>([]);
+  const [exitToast, setExitToast] = useState(false);
+  const lastBackPressRef = useRef<number>(0);
 
   // Player State
   const [activePlayerDetails, setActivePlayerDetails] = useState<MediaDetails | null>(null);
+
+  // Double-Back on Home screen exits the TV app cleanly (Tizen / Android TV standard UX)
+  const isHomeRoot =
+    activeTab === "home" &&
+    !isDetailsOpen &&
+    !isSearchOpen &&
+    !isMirrorModalOpen &&
+    !activePlayerDetails;
+
+  useTvBack(isHomeRoot, () => {
+    const now = Date.now();
+    if (now - lastBackPressRef.current < 2200) {
+      try {
+        const tz = (window as unknown as { tizen?: { application?: { getCurrentApplication?: () => { exit: () => void } } } }).tizen;
+        if (tz?.application?.getCurrentApplication) {
+          tz.application.getCurrentApplication().exit();
+          return;
+        }
+      } catch {}
+      window.close();
+    } else {
+      lastBackPressRef.current = now;
+      setExitToast(true);
+      setTimeout(() => setExitToast(false), 2200);
+    }
+  });
 
   // Global TV D-Pad Spatial Navigation (disabled when VideoPlayer owns remote keys)
   useTvNavigation(Boolean(activePlayerDetails));
@@ -696,8 +724,9 @@ export default function App() {
                   ? "Новинки: Аніме"
                   : "Новинки кіно"}
               </h1>
-              <div className="flex items-center gap-2 self-start sm:self-auto">
+              <div className="flex items-center gap-2 self-start sm:self-auto" data-tv-row>
                 <button
+                  data-tv-focusable
                   disabled={categoryPage <= 1}
                   onClick={() => {
                     playButtonClickSound();
@@ -712,6 +741,7 @@ export default function App() {
                   Сторінка {categoryPage}
                 </span>
                 <button
+                  data-tv-focusable
                   onClick={() => {
                     playButtonClickSound();
                     setCategoryItems([]);
@@ -754,16 +784,49 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(185px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5">
-                {categoryItems.map((card) => (
-                  <MediaCard
-                    key={card.id || card.url}
-                    card={card}
-                    onSelect={handleOpenDetails}
-                    onPlayDirect={handleDirectPlay}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(185px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5">
+                  {categoryItems.map((card) => (
+                    <MediaCard
+                      key={card.id || card.url}
+                      card={card}
+                      onSelect={handleOpenDetails}
+                      onPlayDirect={handleDirectPlay}
+                    />
+                  ))}
+                </div>
+                {/* Bottom Pagination Bar for effortless TV D-pad browsing */}
+                <div className="flex items-center justify-center gap-4 pt-6 pb-4" data-tv-row>
+                  <button
+                    data-tv-focusable
+                    disabled={categoryPage <= 1}
+                    onClick={() => {
+                      playButtonClickSound();
+                      setCategoryItems([]);
+                      setCategoryPage((p) => Math.max(1, p - 1));
+                      window.scrollTo({ top: 0, behavior: "auto" });
+                    }}
+                    className="px-6 py-3 rounded-2xl bg-zinc-900 border border-white/10 text-sm font-bold text-zinc-200 disabled:opacity-40 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer"
+                  >
+                    ← Попередня сторінка
+                  </button>
+                  <span className="text-sm font-mono text-zinc-400">
+                    Сторінка {categoryPage}
+                  </span>
+                  <button
+                    data-tv-focusable
+                    onClick={() => {
+                      playButtonClickSound();
+                      setCategoryItems([]);
+                      setCategoryPage((p) => p + 1);
+                      window.scrollTo({ top: 0, behavior: "auto" });
+                    }}
+                    className="px-6 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-sm font-bold text-white shadow-lg transition-colors cursor-pointer"
+                  >
+                    Наступна сторінка →
+                  </button>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -816,6 +879,13 @@ export default function App() {
           }}
           onTranslatorChange={handlePlayerTranslatorChange}
         />
+      )}
+
+      {/* Double-Back Exit Toast */}
+      {exitToast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-zinc-900/95 border border-white/15 text-sm font-semibold text-white shadow-2xl pointer-events-none">
+          Натисніть «Назад» ще раз для виходу
+        </div>
       )}
 
       {/* Release Notifications Toast Stack (for bookmarked titles that left "В очікуванні") */}

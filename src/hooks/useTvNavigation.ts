@@ -14,9 +14,7 @@ const isVisible = (el: HTMLElement): boolean => {
     return false;
   }
   const rect = el.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return false;
-  const style = window.getComputedStyle(el);
-  return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+  return rect.width > 0 && rect.height > 0;
 };
 
 const getActiveScope = (): ParentNode => {
@@ -40,13 +38,13 @@ export function focusFirstInScope(scope?: ParentNode) {
   const auto = targetScope.querySelector<HTMLElement>("[data-tv-autofocus]");
   if (auto && isVisible(auto)) {
     auto.focus({ preventScroll: true });
-    auto.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    auto.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
     return;
   }
   const list = getFocusableElements(targetScope);
   if (list.length > 0) {
     list[0].focus({ preventScroll: true });
-    list[0].scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    list[0].scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
   }
 }
 
@@ -184,7 +182,7 @@ export function useTvNavigation(disabled: boolean = false) {
         const next = findBestNeighbor(active, candidates, dir);
         if (next) {
           next.focus({ preventScroll: true });
-          next.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+          next.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
           playHoverSound();
         }
         return;

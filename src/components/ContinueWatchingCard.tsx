@@ -93,12 +93,13 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
 
         {/* Remove Button */}
         <button
+          data-tv-focusable
           onClick={(e) => {
             e.stopPropagation();
             onRemove(item.media_id);
           }}
           title="Видалити з продовження перегляду"
-          className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-zinc-950/90 hover:bg-rose-600 text-zinc-300 hover:text-white flex items-center justify-center border border-white/10 transition-opacity duration-150 opacity-0 group-hover:opacity-100 cursor-pointer"
+          className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-zinc-950/90 hover:bg-rose-600 focus:bg-rose-600 text-zinc-300 hover:text-white focus:text-white flex items-center justify-center border border-white/10 transition-opacity duration-150 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 cursor-pointer"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -140,8 +141,10 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
         </div>
       </div>
 
-      {/* Title */}
-      <div
+      {/* Title (D-pad focusable to open full details) */}
+      <button
+        type="button"
+        data-tv-focusable
         onClick={(e) => {
           e.stopPropagation();
           if (onOpenDetails) {
@@ -158,12 +161,12 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
           }
         }}
         title={`Відкрити «${item.title}»`}
-        className="mt-2 px-1 cursor-pointer group/title"
+        className="mt-2 px-1 w-full text-left rounded-lg cursor-pointer group/title focus:outline-none"
       >
         <h4 className="text-sm font-semibold text-zinc-100 truncate group-hover/title:text-rose-400 group-hover:text-rose-400 transition-colors duration-150">
           {item.title}
         </h4>
-      </div>
+      </button>
     </div>
   );
 });

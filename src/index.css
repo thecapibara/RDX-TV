@@ -157,3 +157,17 @@
   outline: none !important;
   box-shadow: 0 0 0 3px var(--accent-500, #f43f5e), 0 0 18px rgba(244, 63, 94, 0.35) !important;
 }
+
+/* Low-GPU Smart TV optimizations (Samsung Tizen / WebOS / older Android TV) */
+.rdx-low-gpu *,
+.rdx-low-gpu *::before,
+.rdx-low-gpu *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.rdx-low-gpu .blur-3xl,
+.rdx-low-gpu .blur-2xl,
+.rdx-low-gpu .blur-xl {
+  filter: none !important;
+}

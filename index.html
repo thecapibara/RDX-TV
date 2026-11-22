@@ -13,7 +13,8 @@
           document.documentElement.setAttribute("data-accent", a);
           document.documentElement.setAttribute("data-bg", b);
           var cm = navigator.userAgent.match(/Chrome\/(\d+)/);
-          if (cm && parseInt(cm[1], 10) < 90) {
+          var isSmartTv = /Tizen|SMART-TV|Web0S/i.test(navigator.userAgent);
+          if (isSmartTv || (cm && parseInt(cm[1], 10) < 90)) {
             document.documentElement.classList.add("rdx-low-gpu");
           }
         } catch(e) {}

@@ -1320,9 +1320,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           enableWorker: true,
           lowLatencyMode: false,
           startPosition: prevTime > 0 ? prevTime : -1,
-          maxBufferLength: turboBufferEnabled ? 300 : 60,
-          maxMaxBufferLength: turboBufferEnabled ? 600 : 120,
-          backBufferLength: turboBufferEnabled ? 120 : 60,
+          maxBufferLength: turboBufferEnabled ? 75 : 45,
+          maxMaxBufferLength: turboBufferEnabled ? 150 : 90,
+          backBufferLength: turboBufferEnabled ? 45 : 30,
           progressive: true,
           maxBufferHole: 1.2,
           highBufferWatchdogPeriod: 1,
@@ -1846,11 +1846,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         triggerActivity();
       }
 
-      // Play / Pause (MediaPlayPause, Space, K)
+      // Play / Pause & Samsung Tizen Remote Media Keys (10252 PlayPause, 415 Play, 19 Pause, 417 FF, 412 RW, 413 Stop)
       if (
         code === "MediaPlayPause" ||
         key === "mediaplaypause" ||
         keyCode === 179 ||
+        keyCode === 10252 ||
         code === "Space" ||
         code === "KeyK" ||
         key === " " ||
@@ -1859,6 +1860,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ) {
         e.preventDefault();
         togglePlay();
+        return;
+      }
+      if (key === "mediaplay" || keyCode === 415) {
+        e.preventDefault();
+        if (videoRef.current?.paused) togglePlay();
+        return;
+      }
+      if (key === "mediapause" || keyCode === 19) {
+        e.preventDefault();
+        if (videoRef.current && !videoRef.current.paused) togglePlay();
+        return;
+      }
+      if (key === "mediafastforward" || keyCode === 417) {
+        e.preventDefault();
+        seekDelta(30);
+        return;
+      }
+      if (key === "mediarewind" || keyCode === 412) {
+        e.preventDefault();
+        seekDelta(-30);
+        return;
+      }
+      if (key === "mediastop" || keyCode === 413) {
+        e.preventDefault();
+        handleTeardownAndClose();
         return;
       }
 
@@ -1942,10 +1968,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           seekDelta(e.shiftKey ? -30 : -10);
         } else if (arrowDir === "right") {
           seekDelta(e.shiftKey ? 30 : 10);
-        } else if (arrowDir === "up") {
-          adjustVolume(0.05);
-        } else if (arrowDir === "down") {
-          adjustVolume(-0.05);
+        } else if (arrowDir === "up" || arrowDir === "down") {
+          // On TV remotes, Up/Down should focus OSD controls rather than overriding hardware TV volume
+          if (!isMiniMode) {
+            requestAnimationFrame(() => playPauseBtnRef.current?.focus());
+          }
         }
         return;
       }
@@ -2088,15 +2115,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       : 0;
     commitSeekToVideo(cur + seconds);
     showHud(seconds > 0 ? `⏩ +${seconds} сек` : `⏪ ${seconds} сек`);
-  };
-
-  const adjustVolume = (delta: number) => {
-    if (!videoRef.current) return;
-    const newVol = Math.max(0, Math.min(1, volume + delta));
-    videoRef.current.volume = newVol;
-    setVolume(newVol);
-    setIsMuted(newVol === 0);
-    showHud(`🔊 ${Math.round(newVol * 100)}%`);
   };
 
   const toggleMute = () => {

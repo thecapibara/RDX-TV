@@ -469,7 +469,10 @@ async function postFormOnce(url: string, body: string, forceDirect: boolean): Pr
     const req = buildFetchArgs(
       url,
       "POST",
-      { "Content-Type": "application/x-www-form-urlencoded" },
+      {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+      },
       body,
       forceDirect
     );
@@ -577,8 +580,16 @@ export const tizenRezka = {
     page?: number
   ): Promise<MediaCard[]> => {
     const clean = baseUrl.replace(/\/+$/, "");
-    const genreSlug = genre && GENRE_PATH_MAP[genre] ? `${GENRE_PATH_MAP[genre]}/` : "";
     const pageSlug = page && page > 1 ? `page/${page}/` : "";
+    if (category === "new") {
+      const targetCat = genre && ["films", "series", "cartoons", "animation"].includes(genre) ? genre : "";
+      const effFilter = filter || "last";
+      const path = targetCat ? `${targetCat}/${pageSlug}` : `new/${pageSlug}`;
+      const html = await fetchHtml(`${clean}/${path}?filter=${encodeURIComponent(effFilter)}`);
+      return parseCatalogHtml(html, clean);
+    }
+    const mappedGenre = genre ? GENRE_PATH_MAP[genre] || genre : "";
+    const genreSlug = mappedGenre ? `${mappedGenre}/` : "";
     const qs = filter ? `?filter=${encodeURIComponent(filter)}` : "";
     const html = await fetchHtml(`${clean}/${category}/${genreSlug}${pageSlug}${qs}`);
     return parseCatalogHtml(html, clean);
@@ -629,7 +640,10 @@ export const tizenRezka = {
       fullUrl.match(/\/(\d+)-/)?.[1] ||
       "0";
 
-    const parsedTitle = doc.querySelector('h1[itemprop="name"]')?.textContent?.trim();
+    const parsedTitle =
+      doc.querySelector('h1[itemprop="name"]')?.textContent?.trim() ||
+      doc.querySelector("div.b-post__title > h1")?.textContent?.trim() ||
+      doc.querySelector(".b-post__title")?.textContent?.trim();
     if (!parsedTitle) {
       throw new Error("Не вдалося завантажити деталі релізу з дзеркала");
     }
@@ -656,16 +670,35 @@ export const tizenRezka = {
 
     const translators: Translator[] = Array.from(
       doc.querySelectorAll("#translators-list .b-translator__item")
-    ).map((el) => {
-      const name = el.getAttribute("title") || el.textContent?.trim() || "Озвучка";
-      const flag = el.querySelector("img")?.getAttribute("alt") || "";
-      return {
-        id: el.getAttribute("data-translator_id") || "0",
-        name,
-        language: flag || (/укр/i.test(name) ? "Українська" : ""),
-        is_active: el.classList.contains("active"),
-      };
-    });
+    )
+      .filter((el) => !el.classList.contains("b-prem_translator"))
+      .map((el) => {
+        const name = el.getAttribute("title") || el.textContent?.trim() || "Озвучка";
+        const flag = el.querySelector("img")?.getAttribute("alt") || "";
+        return {
+          id: el.getAttribute("data-translator_id") || "0",
+          name,
+          language: flag || (/укр/i.test(name) ? "Українська" : ""),
+          is_active: el.classList.contains("active"),
+        };
+      });
+
+    // Single-dub movie/series fallback: extract translator_id from sof.tv.initCDN*Events(id, translator_id, ...)
+    if (translators.length === 0) {
+      const initMatch = html.match(/initCDN(?:Movies|Series)Events\(\s*\d+\s*,\s*(\d+)/);
+      if (initMatch?.[1]) {
+        translators.push({
+          id: initMatch[1],
+          name: "Дубляж / Оригінал",
+          language: "",
+          is_active: true,
+        });
+      }
+    } else if (!translators.some((t) => t.is_active)) {
+      const ukr = translators.find((t) => /укр/i.test(`${t.language} ${t.name}`));
+      if (ukr) ukr.is_active = true;
+      else translators[0].is_active = true;
+    }
 
     const seasons: SeasonTab[] = Array.from(
       doc.querySelectorAll("#simple-seasons-tabs .b-simple_season__item")
@@ -725,8 +758,12 @@ export const tizenRezka = {
       params.set("episode", String(episode ?? 1));
       params.set("action", "get_stream");
     } else {
+      params.set("is_camrip", "0");
+      params.set("is_ads", "0");
+      params.set("is_director", "0");
       params.set("action", "get_movie");
     }
+    params.set("favs", "");
 
     const rawText = await postForm(
       `${clean}/ajax/get_cdn_series/?t=${Date.now()}`,
@@ -961,7 +998,7 @@ async function resolveTmdbMatch(
               }
             }
 
-            const backdropUrl = `https://image.tmdb.org/t/p/original${item.backdrop_path}`;
+            const backdropUrl = `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`;
             if (!best || score > best.score) {
               best = { score, id: item.id, mediaType: st, backdropUrl };
             }

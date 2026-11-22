@@ -44,29 +44,27 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   const [backdrops, setBackdrops] = useState<Record<string, string | null>>({});
   const bannerRef = useRef<HTMLDivElement>(null);
 
-  // Preload high-res 1080p TMDB backdrops for hero slides
+  // Lazy-load w1280 TMDB backdrop only for the active hero slide (avoids 8 concurrent requests on TV startup)
   useEffect(() => {
-    if (!slides || slides.length === 0) return;
+    const slide = slides[currentIndex] || slides[0];
+    if (!slide) return;
+    const key = slide.id || slide.url;
+    if (backdrops[key] !== undefined) return;
 
     let isMounted = true;
-    slides.forEach((slide) => {
-      const key = slide.id || slide.url;
-      if (backdrops[key] !== undefined) return;
-
-      const yearMatch = slide.misc_info?.match(/\b(19\d\d|20\d\d)\b/)?.[0];
-      const slideMediaType: "movie" | "tv" =
-        slide.entity_type === "series" || slide.url.includes("/series/") ? "tv" : "movie";
-      api.getBackdrop(slide.title, (slide as any).orig_title, yearMatch, slideMediaType).then((url) => {
-        if (isMounted) {
-          setBackdrops((prev) => ({ ...prev, [key]: url || null }));
-        }
-      });
+    const yearMatch = slide.misc_info?.match(/\b(19\d\d|20\d\d)\b/)?.[0];
+    const slideMediaType: "movie" | "tv" =
+      slide.entity_type === "series" || slide.url.includes("/series/") ? "tv" : "movie";
+    api.getBackdrop(slide.title, (slide as any).orig_title, yearMatch, slideMediaType).then((url) => {
+      if (isMounted) {
+        setBackdrops((prev) => ({ ...prev, [key]: url || null }));
+      }
     });
 
     return () => {
       isMounted = false;
     };
-  }, [slides]);
+  }, [slides, currentIndex, backdrops]);
 
   // Pause heavy animations and timer when user scrolls down away from the hero banner
   useEffect(() => {

@@ -292,7 +292,7 @@ impl TmdbService {
                                 score += 20_000.0;
                             }
 
-                            let full_url = format!("https://image.tmdb.org/t/p/original{}", path);
+                            let full_url = format!("https://image.tmdb.org/t/p/w1280{}", path);
                             let tmdb_identity = item.id.and_then(|tid| {
                                 let t = if item_type == "movie" || item_type == "tv" {
                                     item_type

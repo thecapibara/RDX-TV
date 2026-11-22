@@ -68,9 +68,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [selectedEpisode, setSelectedEpisode] = useState<number>(1);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const [maxKnownSeasons, setMaxKnownSeasons] = useState<number>(1);
-  const [activeTab, setActiveTab] = useState<DetailTab>("related");
+  const [activeTab, setActiveTab] = useState<DetailTab>("details");
   const [recommendations, setRecommendations] = useState<MediaCard[]>([]);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const recsFetchedForRef = useRef<string | null>(null);
 
   // TV D-pad voiceover drawer state
   const [isTranslatorModalOpen, setIsTranslatorModalOpen] = useState(false);
@@ -164,22 +165,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           })
           .catch(() => {});
 
-        setLoadingRecommendations(true);
-        api
-          .getTmdbRecommendations(
-            det.title,
-            det.orig_title || undefined,
-            detYear,
-            detMediaType,
-            det.id || media.id
-          )
-          .then((recs) => {
-            if (isMounted) setRecommendations(recs);
-          })
-          .catch(() => {})
-          .finally(() => {
-            if (isMounted) setLoadingRecommendations(false);
-          });
+        recsFetchedForRef.current = null;
 
         let progress = initialProgress;
         let epProgress = initialEpProgress;
@@ -221,7 +207,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         }
 
         const hasSeasons = Boolean(det.seasons && det.seasons.length > 0);
-        setActiveTab(hasSeasons ? "episodes" : "related");
+        setActiveTab(hasSeasons ? "episodes" : "details");
 
         setDetails(det);
         setSavedProgress(progress);
@@ -290,6 +276,51 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       isMounted = false;
     };
   }, [isOpen, media]);
+
+  // Lazy-load TMDB recommendations only when the user switches to the "related" tab
+  useEffect(() => {
+    if (!isOpen || !details || activeTab !== "related") return;
+    const targetId = details.id || media?.id || "";
+    if (!targetId || recsFetchedForRef.current === targetId) return;
+
+    recsFetchedForRef.current = targetId;
+    let isMounted = true;
+    setLoadingRecommendations(true);
+
+    const yearMatch = media?.misc_info?.match(/\b(19|20)\d{2}\b/);
+    const detYear =
+      details.info_table
+        .find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk.includes("рік") || lk.includes("год") || lk.includes("дата");
+        })?.[1]
+        ?.match(/\b(19|20)\d{2}\b/)?.[0] || yearMatch?.[0];
+    const cardMediaType: "movie" | "tv" =
+      media?.entity_type === "series" || (media?.url || details.url).includes("/series/")
+        ? "tv"
+        : "movie";
+    const detMediaType: "movie" | "tv" = details.seasons.length > 0 ? "tv" : cardMediaType;
+
+    api
+      .getTmdbRecommendations(
+        details.title,
+        details.orig_title || undefined,
+        detYear,
+        detMediaType,
+        targetId
+      )
+      .then((recs) => {
+        if (isMounted) setRecommendations(recs);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setLoadingRecommendations(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, activeTab, details, media]);
 
   const handleTranslatorSelect = async (translator: Translator) => {
     setSelectedTranslator(translator);

@@ -52,7 +52,9 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MediaCard[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showTvKeyboard, setShowTvKeyboard] = useState(false);
+  const [showTvKeyboard, setShowTvKeyboard] = useState(() =>
+    typeof navigator !== "undefined" && /Tizen|SMART-TV|Web0S/i.test(navigator.userAgent)
+  );
   const [kbLang, setKbLang] = useState<"ua" | "en">("ua");
   const [history, setHistory] = useState<string[]>(loadSearchHistory);
   const inputRef = useRef<HTMLInputElement>(null);

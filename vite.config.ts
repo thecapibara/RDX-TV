@@ -4,11 +4,18 @@ import tailwindcss from "@tailwindcss/postcss";
 import cascadeLayers from "@csstools/postcss-cascade-layers";
 import postcssPresetEnv from "postcss-preset-env";
 
-// @ts-expect-error process is a nodejs global
-const host = process.env.TAURI_DEV_HOST;
-
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      react: "preact/compat",
+      "react-dom/test-utils": "preact/test-utils",
+      "react-dom/client": "preact/compat/client",
+      "react-dom": "preact/compat",
+      "react/jsx-runtime": "preact/jsx-runtime",
+      "react/jsx-dev-runtime": "preact/jsx-dev-runtime",
+    },
+  },
   css: {
     postcss: {
       plugins: [
@@ -27,21 +34,11 @@ export default defineConfig({
   build: {
     target: "chrome70",
     cssTarget: "chrome70",
+    minify: "esbuild",
   },
   clearScreen: false,
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-    watch: {
-      ignored: ["**/src-tauri/**"],
-    },
   },
 });

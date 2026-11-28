@@ -1,4 +1,4 @@
-import Hls from "hls.js";
+import type HlsType from "hls.js";
 import type { PlatformKind, PlayerAdapter, PlayerCallbacks, PlayerLoadOptions } from "./types";
 
 /**
@@ -166,7 +166,7 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
   readonly kind: "webos-native" | "html5-hls";
   readonly isExternalSurface = false;
   private video: HTMLVideoElement | null = null;
-  private hls: Hls | null = null;
+  private hls: HlsType | null = null;
   private cleanupListeners: (() => void) | null = null;
 
   constructor(private readonly platformKind: PlatformKind) {
@@ -236,13 +236,16 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
     const isHlsUrl = opts.url.includes(".m3u8") || opts.url.includes(":hls:");
     const canNativeHls = Boolean(video.canPlayType("application/vnd.apple.mpegurl"));
 
-    // Prefer native hardware HLS on LG webOS / Safari (zero JS demuxing RAM)
-    if (!isHlsUrl || (this.platformKind === "webos" && canNativeHls) || (!Hls.isSupported() && canNativeHls)) {
+    // Prefer native hardware HLS on LG webOS / Safari (zero JS demuxing RAM, never loads hls.js)
+    if (!isHlsUrl || (this.platformKind === "webos" && canNativeHls)) {
       video.src = opts.url;
       video.load();
       video.play().catch(() => {});
       return;
     }
+
+    // Lazy-load hls.js only when MSE fallback is actually needed (saves ~520KB on ExoPlayer/AVPlay/webOS)
+    const { default: Hls } = await import("hls.js");
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -280,6 +283,13 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
           callbacks.onError?.(`HLS error: ${data.details}`);
         }
       });
+      return;
+    }
+
+    if (canNativeHls) {
+      video.src = opts.url;
+      video.load();
+      video.play().catch(() => {});
       return;
     }
 

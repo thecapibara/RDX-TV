@@ -9,6 +9,7 @@ import type {
   WatchProgress,
 } from "./types";
 import { api } from "./services/api";
+import { platform } from "./platform";
 import { TopBar, type NavTab } from "./components/TopBar";
 import { HeroBanner } from "./components/HeroBanner";
 import { Swimlane } from "./components/Swimlane";
@@ -64,13 +65,7 @@ export default function App() {
   useTvBack(isHomeRoot, () => {
     const now = Date.now();
     if (now - lastBackPressRef.current < 2200) {
-      try {
-        const tz = (window as unknown as { tizen?: { application?: { getCurrentApplication?: () => { exit: () => void } } } }).tizen;
-        if (tz?.application?.getCurrentApplication) {
-          tz.application.getCurrentApplication().exit();
-          return;
-        }
-      } catch {}
+      platform.exitApp();
       window.close();
     } else {
       lastBackPressRef.current = now;

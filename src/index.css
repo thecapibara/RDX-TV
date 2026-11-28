@@ -205,7 +205,6 @@
 
 .rdx-anim-hero {
   animation: rdxHeroFade 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  will-change: opacity, transform;
 }
 
 .rdx-anim-slide-up {

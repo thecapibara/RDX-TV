@@ -1,30 +1,29 @@
-# RDX — Desktop Streaming Client (Rust + Tauri v2)
+# RDX-TV v2 — Lightweight Smart TV Streaming Client
 
 ## Project Overview
-**RDX** is a cross-platform desktop streaming application (Windows, Linux, macOS) built with **Rust (Tauri v2)** and a modern **Android TV / Smart TV** inspired interface (like Spotify Desktop meets Apple TV / Google TV). It serves as a native-feeling client for HDRezka (`https://rezka-tv.org/` and configurable mirrors).
+**RDX-TV v2** is an ultra-lightweight Smart TV streaming client designed specifically for **1–2 GB RAM TVs**:
+- **Android TV (32-bit `armeabi-v7a` + 64-bit `arm64-v8a`)**: lightweight Kotlin shell (`android-tv/`) hosting a transparent Preact WebView UI over native **Media3 / ExoPlayer** + **OkHttp DoH (`1.1.1.1`)** + **SoundPool**.
+- **Samsung Tizen (`.wgt`)**: packaged web app (`tizen/config.xml`) using native hardware **`webapis.avplay`** and direct mirror fetches (`<access origin="*">`).
+- **LG webOS (`.ipk`)**: packaged web app (`webos/appinfo.json`) using native `<video>` HLS + local Node.js **`webos-service`** (`webos/service/index.js`) with DoH (`1.1.1.1`/`8.8.8.8`) and CookieJar.
 
-Always read [`docs/SPEC.md`](docs/SPEC.md) for full architecture, feature specifications, and the current implementation roadmap.
+> The legacy Rust/Tauri v1 codebase is archived in the `legacy-rdxtv` branch.
 
 ## Tech Stack
-- **Core / Backend**: Rust (Tauri v2), `reqwest` (with cookie store & custom headers/TLS), `scraper` (HTML parsing), `rusqlite` / `sqlx` (local SQLite state).
-- **Frontend / UI**: React 19 + TypeScript + Vite + Tailwind CSS + Framer Motion (smooth 60fps TV-style animations, focus/hover spatial navigation, ambient hero backdrops) + Lucide Icons.
-- **Video Player**: `hls.js` + custom Android TV OSD overlay + Dual Mini-Player support (Tauri Always-on-Top frameless PiP window & Web PiP).
-- **Target Platforms**: Linux, Windows, macOS.
+- **UI Core (`src/`)**: **Preact** (`preact/compat`) + TypeScript + Vite + Tailwind CSS (zero `framer-motion`, zero `tailwind-merge`, zero WebGL shaders, zero Cloudflare relays).
+- **Platform Adapters (`src/platform/`)**:
+  - `http.ts` — Android `OkHttp` bridge / webOS Luna service / Tizen direct `fetch` / Vite dev-only DoH proxy.
+  - `player.ts` — Android `ExoPlayer` / Samsung `AVPlay` / LG webOS native HLS / lazy-loaded `hls.js` fallback.
+  - `audio.ts` — Android `SoundPool` / Web Audio MP3 buffers + oscillator fallback.
+- **Scraper (`src/services/tizenRezka.ts`)**: unified client-side HDRezka parser, `#h` stream deobfuscator, chunked Anubis PoW solver, and TMDB `w1280` backdrop lookup.
 
-## Core Modules (Rust Backend `src-tauri/src/`)
-1. `mirror/` — **Mirror Manager**: dynamic base URL switching (default `https://rezka-tv.org/`, presets + custom URLs), health/latency checker, persistent mirror config.
-2. `client/` — **HTTP & Anti-Bot Session**: persistent User-Agent + Cookie jar (`cf_clearance`, `dle_user_id`, `PHPSESSID`). Includes an on-demand **Captcha Bridge Window** (opens a Tauri WebView to the active mirror when Cloudflare/reCAPTCHA triggers, extracts solved cookies back to Rust).
-3. `parser/` — **HDRezka Scraper & Stream Decryptor**:
-   - Home rows (Trending, Continue Watching, Movies, Series, Cartoons, Anime), Search, Catalog filters, Media Details.
-   - AJAX endpoints (`/ajax/get_cdn_series/`) and `#h` stream URL deobfuscation (`bk0..bk4` trash string stripping + Base64 decoding).
-4. `storage/` — **Local SQLite Database**:
-   - Watch progress (`media_id`, `translator_id`, `season`, `episode`, `position_sec`, `duration_sec`, `updated_at`).
-   - Bookmarks / Favorites & Mirror settings.
-5. `window/` — **Mini-Player & Window Controller**:
-   - Switches main window into a compact Always-on-Top frameless PiP window or spawns a dedicated PiP overlay window across workspaces.
+## Build & Verification
+- Dev server (with local DoH proxy): `npm run dev` (`http://localhost:1420`)
+- Production web bundle check: `npm run build` (`tsc && vite build`, target `< 80 KB` gzip main JS)
+- Samsung Tizen staging: `npm run build:tizen`
+- LG webOS staging: `npm run build:webos`
+- Android TV assets sync: `npm run build:android-assets`
 
-## Workflow & Multi-Agent Continuity Rules
-- **Single Source of Truth**: Keep [`docs/SPEC.md`](docs/SPEC.md) and [`docs/TASKS.md`](docs/TASKS.md) updated after completing each milestone so any new session, subagent, or model switch has full context immediately.
-- **Streaming Priority**: Always prioritize HLS (`hls_url` via `Hls.js`) over direct MP4 (`mp4_url`) for Voidboost streams. Monolithic MP4 files cause 60+ second GStreamer freezes on Linux, whereas HLS starts in < 2 seconds.
-- **Verification**: Always verify Rust changes with `cargo check` / `cargo test` inside `src-tauri` and frontend changes with `npm run build` before marking a task complete.
-- **Subagent / Swarm Model Policy**: Do NOT use `Model: "flash"` or `Model: "flash_lite"` (3.8 Flash) for subagents in this project. Always use `Model: "inherit"` (or omit `model` in `swarm` so workers run on the active primary model).
+## Workflow Rules
+- **No Cloudflare / external relays**: all networking runs locally on the TV device.
+- **TV Performance Budget**: avoid `backdrop-filter`, heavy JS animation libraries, and unbounded buffers on 1–2 GB RAM TVs.
+- **Subagent / Swarm Model Policy**: Do NOT use `Model: "flash"` or `Model: "flash_lite"` for subagents in this project. Always use `Model: "inherit"`.

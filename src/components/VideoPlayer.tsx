@@ -123,6 +123,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const lastSavedSecRef = useRef(0);
   const currentTimeRef = useRef(initialPositionSec);
   const durationRef = useRef(0);
+  const hasConsumedInitialPosRef = useRef(false);
+  const osdVisibleRef = useRef(true);
+  const saveProgressRef = useRef<() => void>(() => {});
+  const nextEpisodeRef = useRef<{ season: number; episode: number; isNewSeason: boolean } | null>(null);
 
   const isSeries = useMemo(
     () => details.seasons.length > 0 || details.episodes.length > 0 || Boolean(activeSeason),
@@ -138,6 +142,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [seasons, setSeasons] = useState<SeasonTab[]>(details.seasons);
   const [episodes, setEpisodes] = useState<EpisodeTab[]>(details.episodes);
   const [season, setSeason] = useState<number>(
+    activeSeason || parseInt(details.seasons[0]?.id || "1", 10) || 1
+  );
+  const [viewingSeason, setViewingSeason] = useState<number>(
     activeSeason || parseInt(details.seasons[0]?.id || "1", 10) || 1
   );
   const [episode, setEpisode] = useState<number>(
@@ -205,8 +212,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [details.translators]);
 
   const currentSeasonEpisodes = useMemo(
-    () => episodes.filter((e) => parseInt(e.season_id, 10) === season),
-    [episodes, season]
+    () => episodes.filter((e) => parseInt(e.season_id, 10) === viewingSeason),
+    [episodes, viewingSeason]
   );
 
   const nextEpisodeInfo = useMemo(() => {
@@ -246,11 +253,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, []);
 
   const revealOsd = useCallback(() => {
+    osdVisibleRef.current = true;
     setOsdVisible(true);
+    setCurrentTime(currentTimeRef.current);
     if (osdTimerRef.current) window.clearTimeout(osdTimerRef.current);
     osdTimerRef.current = window.setTimeout(() => {
       setDrawer((d) => {
-        if (!d) setOsdVisible(false);
+        if (!d) {
+          osdVisibleRef.current = false;
+          setOsdVisible(false);
+        }
         return d;
       });
     }, 4500);
@@ -279,6 +291,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     api.saveWatchProgress(progress).catch(() => {});
   }, [details, isSeries, translatorId, activeTranslator?.name, season, episode]);
 
+  // Keep refs always fresh so player callbacks & unmount cleanup never use stale closures
+  saveProgressRef.current = saveProgressNow;
+  nextEpisodeRef.current = nextEpisodeInfo;
+
   // Create platform player adapter on mount
   useEffect(() => {
     const adapter = platform.createPlayer();
@@ -288,17 +304,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     adapter.attachVideoElement?.(videoRef.current);
 
     return () => {
-      saveProgressNow();
+      saveProgressRef.current();
       adapter.destroy();
       adapterRef.current = null;
       if (osdTimerRef.current) window.clearTimeout(osdTimerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch stream when translator / season / episode changes
   useEffect(() => {
     const reqId = ++streamReqIdRef.current;
+    // Reset subtitle track when switching episode or translator
+    setSelectedSubUrl("");
     // `initialStreams` embedded in HDRezka HTML always belongs to the HTML's `.active` translator
     const htmlActiveTranslatorId = details.translators.find((t) => t.is_active)?.id;
     const isHtmlDefaultTranslator =
@@ -348,7 +365,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setNextCountdown(null);
     adapter.attachVideoElement?.(videoRef.current);
 
-    const startAt = currentTimeRef.current > 2 ? currentTimeRef.current : initialPositionSec;
+    const startAt =
+      currentTimeRef.current > 2
+        ? currentTimeRef.current
+        : !hasConsumedInitialPosRef.current
+          ? initialPositionSec
+          : 0;
+    hasConsumedInitialPosRef.current = true;
 
     adapter.load(
       {
@@ -366,25 +389,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             setDuration(dur);
           }
           adapter.setPlaybackRate(playbackSpeed);
+          adapter.setAspectMode?.(aspectMode);
+          if (audioBoost > 100) adapter.setAudioBoost?.(audioBoost);
         },
         onTimeUpdate: (cur, dur, buf) => {
           currentTimeRef.current = cur;
-          setCurrentTime(cur);
-          if (dur > 0) {
-            durationRef.current = dur;
-            setDuration(dur);
+          if (dur > 0) durationRef.current = dur;
+          // Avoid 2-4x/sec full React re-renders on low-RAM TVs when OSD is hidden
+          if (osdVisibleRef.current) {
+            setCurrentTime(cur);
+            if (dur > 0) setDuration(dur);
+            setBufferedTime(buf);
           }
-          setBufferedTime(buf);
-          if (Math.abs(cur - lastSavedSecRef.current) >= 5) {
-            saveProgressNow();
+          if (Math.abs(cur - lastSavedSecRef.current) >= 15) {
+            saveProgressRef.current();
           }
         },
         onStateChange: (st) => {
           setPlayState(st);
-          if (st === "paused") saveProgressNow();
+          if (st === "paused") saveProgressRef.current();
           if (st === "ended") {
-            saveProgressNow();
-            if (nextEpisodeInfo) {
+            saveProgressRef.current();
+            if (nextEpisodeRef.current) {
               setNextCountdown(15);
             }
           }
@@ -488,6 +514,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       currentTimeRef.current = 0;
       setCurrentTime(0);
       setSeason(s);
+      setViewingSeason(s);
       setEpisode(e);
       onEpisodeChange?.(s, e);
     },
@@ -540,12 +567,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         e.preventDefault();
         adapterRef.current?.pause();
         revealOsd();
-      } else if (key === "ArrowLeft" || key === "MediaRewind" || e.keyCode === 412) {
+      } else if (key === "MediaRewind" || e.keyCode === 412) {
+        e.preventDefault();
+        seekBy(-10);
+      } else if (key === "MediaFastForward" || e.keyCode === 417) {
+        e.preventDefault();
+        seekBy(10);
+      } else if (key === "ArrowLeft") {
         if (!osdVisible) {
           e.preventDefault();
           seekBy(e.shiftKey ? -30 : -10);
         }
-      } else if (key === "ArrowRight" || key === "MediaFastForward" || e.keyCode === 417) {
+      } else if (key === "ArrowRight") {
         if (!osdVisible) {
           e.preventDefault();
           seekBy(e.shiftKey ? 30 : 10);
@@ -593,7 +626,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           onClick={togglePlay}
         >
           {selectedSubUrl && (
-            <track kind="subtitles" src={selectedSubUrl} srcLang="uk" label="Субтитри" default />
+            <track
+              key={selectedSubUrl}
+              kind="subtitles"
+              src={selectedSubUrl}
+              srcLang="uk"
+              label="Субтитри"
+              default
+            />
           )}
         </video>
       )}
@@ -1061,10 +1101,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       <button
                         key={s.id}
                         data-tv-focusable
-                        onClick={() => setSeason(num)}
+                        onClick={() => setViewingSeason(num)}
                         className={cn(
                           "px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer",
-                          season === num
+                          viewingSeason === num
                             ? "bg-rose-600 border-rose-500 text-white"
                             : "bg-zinc-900 border-white/10 text-zinc-300"
                         )}
@@ -1078,13 +1118,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <div className="grid grid-cols-3 gap-2">
                 {currentSeasonEpisodes.map((ep) => {
                   const epNum = parseInt(ep.episode_id, 10) || 1;
-                  const active = epNum === episode;
+                  const active = viewingSeason === season && epNum === episode;
                   return (
                     <button
                       key={`${ep.season_id}-${ep.episode_id}`}
                       data-tv-focusable
                       data-tv-autofocus={active || undefined}
-                      onClick={() => handleJumpEpisode(season, epNum)}
+                      onClick={() => handleJumpEpisode(viewingSeason, epNum)}
                       className={cn(
                         "py-2.5 px-2 rounded-xl border text-xs font-bold cursor-pointer",
                         active

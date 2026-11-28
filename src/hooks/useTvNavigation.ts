@@ -59,6 +59,7 @@ function findBestNeighbor(
   const cx = cRect.left + cRect.width / 2;
   const cy = cRect.top + cRect.height / 2;
   const currentRow = current.closest("[data-tv-row]");
+  const currentInHeader = Boolean(current.closest("header"));
 
   let best: HTMLElement | null = null;
   let bestScore = Infinity;
@@ -94,6 +95,11 @@ function findBestNeighbor(
     }
 
     let score = primary + ortho * 2.6;
+
+    // Never jump into fixed/sticky <header> while pressing Up if any content exists above
+    if (dir === "up" && !currentInHeader && el.closest("header")) {
+      score += 50000;
+    }
 
     // Strongly prefer staying in the same horizontal row on Left/Right
     if ((dir === "left" || dir === "right") && currentRow) {

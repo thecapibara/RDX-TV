@@ -167,8 +167,8 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
               </button>
             </div>
 
-            <div className="overflow-y-auto no-scrollbar pr-1">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            <div className="overflow-y-auto no-scrollbar p-2 -mx-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
                 <button
                   data-tv-focusable
                   data-tv-autofocus={activeGenre === null || undefined}

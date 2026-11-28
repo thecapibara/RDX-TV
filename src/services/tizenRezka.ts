@@ -888,7 +888,7 @@ async function resolveTmdbMatch(
               }
             }
 
-            const backdropUrl = `https://image.tmdb.org/t/p/w780${item.backdrop_path}`;
+            const backdropUrl = `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`;
             if (!best || score > best.score) {
               best = { score, id: item.id, mediaType: st, backdropUrl };
             }

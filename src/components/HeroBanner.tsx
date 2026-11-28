@@ -123,11 +123,11 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
       onBlur={() => setIsHovered(false)}
       className="relative w-full h-[58vh] min-h-[440px] max-h-[640px] overflow-hidden select-none group [contain:layout_paint]"
     >
-      {/* 1. Backdrop Layer (TV-optimized w780 TMDB Backdrop or solid gradient fallback) */}
+      {/* 1. Backdrop Layer (Crisp w1280 TMDB Backdrop or Pure CSS Aurora Fallback — zero stretched low-res poster) */}
       {currentBackdrop ? (
         <div
           key={`backdrop-${activeKey}`}
-          className="absolute inset-0 pointer-events-none overflow-hidden transition-opacity duration-500"
+          className="absolute inset-0 pointer-events-none overflow-hidden rdx-anim-hero"
         >
           <img
             src={currentBackdrop}
@@ -151,18 +151,18 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
       ) : (
         <div
           key={`aurora-${activeKey}`}
-          className="absolute inset-0 pointer-events-none overflow-hidden"
+          className="absolute inset-0 pointer-events-none overflow-hidden rdx-anim-hero"
           style={{
             background:
-              "radial-gradient(circle at 75% 25%, var(--accent-950, #4c0519) 0%, var(--bg-surface, #050507) 55%, var(--bg-base, #000000) 100%)",
+              "radial-gradient(ellipse 80% 70% at 75% 28%, var(--accent-950, #4c0519) 0%, rgba(20, 8, 16, 0.85) 42%, var(--bg-base, #000000) 100%)",
           }}
         >
-          <img
-            src={currentMedia.poster}
-            alt=""
-            aria-hidden="true"
-            decoding="async"
-            className="w-full h-full object-cover object-center opacity-25"
+          <div
+            className="absolute inset-0 opacity-35"
+            style={{
+              background:
+                "radial-gradient(circle at 65% 45%, var(--accent-600, #e11d48) 0%, transparent 55%)",
+            }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-base,#000000)] via-transparent to-transparent opacity-95" />
           <div className="absolute inset-0 bg-gradient-to-r from-[var(--bg-base,#000000)] via-[var(--bg-base,#000000)]/80 to-transparent w-full" />
@@ -186,7 +186,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         {/* Badges Row */}
         <div
           key={`meta-${currentMedia.id || currentMedia.url}`}
-          className="flex flex-wrap items-center gap-2.5"
+          className="flex flex-wrap items-center gap-2.5 rdx-anim-slide-up"
         >
           <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase tracking-wider bg-rose-600/90 text-white shadow-md shadow-rose-950/50 border border-rose-400/30">
             {isSeries ? "Серіал" : "Фільм"}
@@ -215,7 +215,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         {/* Title */}
         <h1
           key={`title-${currentMedia.id || currentMedia.url}`}
-          className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white line-clamp-2"
+          className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white line-clamp-2 rdx-anim-slide-up"
         >
           {currentMedia.title}
         </h1>

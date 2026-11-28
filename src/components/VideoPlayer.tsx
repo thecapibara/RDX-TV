@@ -974,7 +974,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {drawer && (
         <div
           data-tv-scope="modal"
-          className="absolute inset-y-0 right-0 z-40 w-80 sm:w-96 bg-zinc-950/95 border-l border-white/10 p-6 flex flex-col gap-4 overflow-y-auto"
+          className="absolute inset-y-0 right-0 z-40 w-80 sm:w-96 bg-zinc-950/95 border-l border-white/10 p-6 flex flex-col gap-4 overflow-y-auto rdx-anim-drawer"
         >
           <div className="flex items-center justify-between">
             <h3 className="text-base font-black text-white">

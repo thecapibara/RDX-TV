@@ -182,7 +182,12 @@ export function useTvNavigation(disabled: boolean = false) {
         const next = findBestNeighbor(active, candidates, dir);
         if (next) {
           next.focus({ preventScroll: true });
-          next.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
+          // Smooth scroll on single D-pad tap, instant on held-key repeat to avoid sluggishness
+          next.scrollIntoView({
+            behavior: e.repeat ? "auto" : "smooth",
+            block: "nearest",
+            inline: "center",
+          });
           playHoverSound();
         }
         return;

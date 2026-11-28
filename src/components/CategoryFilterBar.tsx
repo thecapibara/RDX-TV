@@ -1,15 +1,12 @@
-import React, { useState, useRef, useEffect } from "react";
-import { ChevronDown, Search, Check, X, Filter } from "lucide-react";
-import {
-  SORT_FILTERS,
-  CATEGORY_GENRES,
-} from "../constants/genres";
+import React, { useState, useEffect } from "react";
+import { Check, X, Filter } from "lucide-react";
+import { SORT_FILTERS, CATEGORY_GENRES } from "../constants/genres";
 import { cn } from "../lib/utils";
-import { playButtonClickSound } from "../services/sound";
+import { playButtonClickSound, playBackSound } from "../services/sound";
 import { focusFirstInScope, useTvBack } from "../hooks/useTvNavigation";
 
 interface CategoryFilterBarProps {
-  category: string; // "films" | "series" | "cartoons" | "animation"
+  category: string; // "films" | "series" | "cartoons" | "animation" | "new"
   activeSort: string;
   onSortChange: (sortId: string) => void;
   activeGenre: string | null;
@@ -23,43 +20,18 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
   activeGenre,
   onGenreChange,
 }) => {
-  const [isGenreDropdownOpen, setIsGenreDropdownOpen] = useState(false);
-  const [genreSearch, setGenreSearch] = useState("");
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isGenreModalOpen, setIsGenreModalOpen] = useState(false);
 
   const availableGenres = CATEGORY_GENRES[category] || [];
 
-  useTvBack(isGenreDropdownOpen, () => setIsGenreDropdownOpen(false));
+  useTvBack(isGenreModalOpen, () => setIsGenreModalOpen(false));
 
   useEffect(() => {
-    if (isGenreDropdownOpen) {
-      const t = setTimeout(() => focusFirstInScope(), 30);
-      return () => clearTimeout(t);
+    if (isGenreModalOpen) {
+      const t = window.setTimeout(() => focusFirstInScope(), 30);
+      return () => window.clearTimeout(t);
     }
-  }, [isGenreDropdownOpen]);
-
-  // Close dropdown on outside click or Escape
-  useEffect(() => {
-    if (!isGenreDropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsGenreDropdownOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsGenreDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isGenreDropdownOpen]);
+  }, [isGenreModalOpen]);
 
   // Reset genre when switching categories if the genre isn't valid for the new category
   useEffect(() => {
@@ -68,18 +40,12 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
     }
   }, [category, activeGenre, availableGenres, onGenreChange]);
 
-  // Filtered genres for the dropdown popover
-  const filteredGenres = availableGenres.filter((g) =>
-    g.label.toLowerCase().includes(genreSearch.toLowerCase().trim())
-  );
-
-  // Top 6 genres for quick chips
   const quickGenres = availableGenres.slice(0, 6);
   const activeGenreLabel = availableGenres.find((g) => g.id === activeGenre)?.label;
 
   return (
     <div className="w-full space-y-4 pt-1 pb-3 select-none">
-      {/* 1. Sort Filter Pills (Останні надходження / Популярні / Зараз дивляться / В очікуванні) */}
+      {/* 1. Sort Filter Pills */}
       <div data-tv-row="category-sort" className="flex flex-wrap items-center gap-2 sm:gap-2.5">
         {SORT_FILTERS.map((filter) => {
           const isActive = activeSort === filter.id;
@@ -104,10 +70,9 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
         })}
       </div>
 
-      {/* 2. Genre Chips & Full Dropdown */}
+      {/* 2. Quick Genre Chips + 10-Foot TV Genre Grid Modal Trigger */}
       {availableGenres.length > 0 && (
         <div data-tv-row="category-genres" className="flex flex-wrap items-center gap-2 pt-0.5">
-          {/* "Всі жанри" / "Всі новинки" Chip */}
           <button
             data-tv-focusable
             onClick={() => {
@@ -124,7 +89,6 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
             {category === "new" ? "Всі новинки" : "Всі жанри"}
           </button>
 
-          {/* Quick-Access Top Genre Chips / Content Type Chips */}
           {quickGenres.map((g) => {
             const isActive = activeGenre === g.id;
             return (
@@ -147,117 +111,110 @@ export const CategoryFilterBar: React.FC<CategoryFilterBarProps> = ({
             );
           })}
 
-          {/* Full Genre Dropdown Button (Only shown if more genres exist beyond quick chips) */}
           {availableGenres.length > quickGenres.length && (
-            <div ref={dropdownRef} className="relative">
+            <button
+              data-tv-focusable
+              onClick={() => {
+                playButtonClickSound();
+                setIsGenreModalOpen(true);
+              }}
+              className={cn(
+                "flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                activeGenre && !quickGenres.some((g) => g.id === activeGenre)
+                  ? "bg-rose-600/30 text-rose-200 border-rose-500/60"
+                  : "bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 hover:text-white border-white/15"
+              )}
+            >
+              <Filter className="w-3.5 h-3.5 text-rose-400" />
+              <span>
+                {activeGenre && !quickGenres.some((g) => g.id === activeGenre)
+                  ? activeGenreLabel
+                  : "Усі жанри"}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 3. Full 10-Foot TV Genre Grid Modal (D-pad friendly, zero keyboard input needed) */}
+      {isGenreModalOpen && (
+        <div
+          data-tv-scope="modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              playBackSound();
+              setIsGenreModalOpen(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 sm:p-10"
+        >
+          <div className="w-full max-w-4xl max-h-[82vh] rounded-3xl bg-zinc-950 border border-white/15 shadow-2xl p-6 sm:p-8 flex flex-col gap-5 overflow-hidden rdx-anim-modal">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Filter className="w-5 h-5 text-rose-500" />
+                <h2 className="text-xl font-black text-white">Вибір жанру</h2>
+              </div>
               <button
                 data-tv-focusable
                 onClick={() => {
-                  playButtonClickSound();
-                  setIsGenreDropdownOpen((prev) => !prev);
+                  playBackSound();
+                  setIsGenreModalOpen(false);
                 }}
-                className={cn(
-                  "flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
-                  activeGenre && !quickGenres.some((g) => g.id === activeGenre)
-                    ? "bg-rose-600/30 text-rose-200 border-rose-500/60 font-semibold"
-                    : "bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border-white/10"
-                )}
+                className="p-2.5 rounded-xl bg-zinc-900 border border-white/10 text-zinc-300 hover:text-white cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500"
+                title="Закрити"
               >
-                <Filter className="w-3.5 h-3.5 opacity-70" />
-                <span>
-                  {activeGenre && !quickGenres.some((g) => g.id === activeGenre)
-                    ? activeGenreLabel
-                    : "Більше жанрів"}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    "w-3.5 h-3.5 text-zinc-400 transition-transform duration-200",
-                    isGenreDropdownOpen && "rotate-180"
-                  )}
-                />
+                <X className="w-5 h-5" />
               </button>
+            </div>
 
-              {/* Dropdown Popover */}
-            {isGenreDropdownOpen && (
-              <div
-                data-tv-scope="modal"
-                className="absolute left-0 mt-2 w-72 sm:w-80 max-h-96 overflow-hidden bg-zinc-950/95 border border-white/15 rounded-2xl shadow-2xl p-3 z-50 flex flex-col space-y-2 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
-              >
-                {/* Search input inside dropdown */}
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
-                  <input
-                    autoFocus
-                    type="text"
-                    value={genreSearch}
-                    onChange={(e) => setGenreSearch(e.target.value)}
-                    data-tv-focusable
-                    data-tv-autofocus
-                    placeholder="Пошук жанру..."
-                    className="w-full bg-zinc-900 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:ring-4 focus:ring-rose-500 focus:border-rose-500"
-                  />
-                  {genreSearch && (
-                    <button
-                      data-tv-focusable
-                      onClick={() => setGenreSearch("")}
-                      className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-white rounded focus:outline-none focus:ring-4 focus:ring-rose-500"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+            <div className="overflow-y-auto no-scrollbar pr-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                <button
+                  data-tv-focusable
+                  data-tv-autofocus={activeGenre === null || undefined}
+                  onClick={() => {
+                    playButtonClickSound();
+                    onGenreChange(null);
+                    setIsGenreModalOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center justify-between px-4 py-3.5 rounded-2xl border text-sm font-bold text-left cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                    activeGenre === null
+                      ? "bg-rose-600 border-rose-500 text-white"
+                      : "bg-zinc-900 border-white/10 text-zinc-200 hover:bg-zinc-800"
                   )}
-                </div>
+                >
+                  <span>Всі жанри</span>
+                  {activeGenre === null && <Check className="w-4 h-4 shrink-0" />}
+                </button>
 
-                {/* Genre List */}
-                <div className="overflow-y-auto max-h-72 space-y-0.5 pr-1 divide-y divide-white/5 no-scrollbar">
-                  {/* Reset to all */}
-                  <button
-                    data-tv-focusable
-                    onClick={() => {
-                      playButtonClickSound();
-                      onGenreChange(null);
-                      setIsGenreDropdownOpen(false);
-                      setGenreSearch("");
-                    }}
-                    className={cn(
-                      "w-full px-3 py-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
-                      activeGenre === null
-                        ? "bg-rose-600/20 text-rose-300 font-semibold"
-                        : "text-zinc-300 hover:bg-white/5"
-                    )}
-                  >
-                    <span>Всі жанри</span>
-                    {activeGenre === null && <Check className="w-3.5 h-3.5 text-rose-400" />}
-                  </button>
-
-                  {filteredGenres.map((g) => {
-                    const isSelected = activeGenre === g.id;
-                    return (
-                      <button
-                        key={g.id}
-                        data-tv-focusable
-                        onClick={() => {
-                          playButtonClickSound();
-                          onGenreChange(g.id);
-                          setIsGenreDropdownOpen(false);
-                          setGenreSearch("");
-                        }}
-                        className={cn(
-                          "w-full px-3 py-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
-                          isSelected
-                            ? "bg-rose-600 text-white font-semibold"
-                            : "text-zinc-300 hover:bg-white/5"
-                        )}
-                      >
-                        <span>{g.label}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                {availableGenres.map((g) => {
+                  const isSelected = activeGenre === g.id;
+                  return (
+                    <button
+                      key={g.id}
+                      data-tv-focusable
+                      data-tv-autofocus={isSelected || undefined}
+                      onClick={() => {
+                        playButtonClickSound();
+                        onGenreChange(g.id);
+                        setIsGenreModalOpen(false);
+                      }}
+                      className={cn(
+                        "flex items-center justify-between px-4 py-3.5 rounded-2xl border text-sm font-semibold text-left cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-500",
+                        isSelected
+                          ? "bg-rose-600 border-rose-500 text-white font-bold"
+                          : "bg-zinc-900 border-white/10 text-zinc-200 hover:bg-zinc-800"
+                      )}
+                    >
+                      <span className="truncate">{g.label}</span>
+                      {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                    </button>
+                  );
+                })}
               </div>
-            )}
+            </div>
           </div>
-        )}
         </div>
       )}
     </div>

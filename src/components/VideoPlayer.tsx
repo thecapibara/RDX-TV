@@ -144,10 +144,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     activeEpisode || parseInt(details.episodes[0]?.episode_id || "1", 10) || 1
   );
 
-  const [streamData, setStreamData] = useState<StreamData | null>(initialStreams);
-  const [selectedQuality, setSelectedQuality] = useState<StreamQuality | null>(() =>
-    initialStreams ? pickInitialQuality(initialStreams.qualities, initialStreams.default_quality) : null
+  const htmlActiveTranslatorId = useMemo(
+    () => details.translators.find((t) => t.is_active)?.id,
+    [details.translators]
   );
+
+  const [streamData, setStreamData] = useState<StreamData | null>(() =>
+    !translatorId || (htmlActiveTranslatorId && translatorId === htmlActiveTranslatorId)
+      ? initialStreams
+      : null
+  );
+  const [selectedQuality, setSelectedQuality] = useState<StreamQuality | null>(() => {
+    const matchesDefault =
+      !translatorId || (htmlActiveTranslatorId && translatorId === htmlActiveTranslatorId);
+    return matchesDefault && initialStreams
+      ? pickInitialQuality(initialStreams.qualities, initialStreams.default_quality)
+      : null;
+  });
   const [selectedSubUrl, setSelectedSubUrl] = useState<string>("");
 
   const [playState, setPlayState] = useState<"loading" | "playing" | "paused" | "buffering" | "ended">("loading");

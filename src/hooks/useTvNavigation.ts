@@ -188,12 +188,17 @@ export function useTvNavigation(disabled: boolean = false) {
         const next = findBestNeighbor(active, candidates, dir);
         if (next) {
           next.focus({ preventScroll: true });
-          // Smooth scroll on single D-pad tap, instant on held-key repeat to avoid sluggishness
-          next.scrollIntoView({
-            behavior: e.repeat ? "auto" : "smooth",
-            block: "nearest",
-            inline: "center",
-          });
+          const scrollBehavior: ScrollBehavior = e.repeat ? "auto" : "smooth";
+          // When focus returns to Hero actions or fixed TopBar, unfold page back to top (scrollY = 0)
+          if (next.closest('[data-tv-row="hero-actions"]') || next.closest("header")) {
+            window.scrollTo({ top: 0, behavior: scrollBehavior });
+          } else {
+            next.scrollIntoView({
+              behavior: scrollBehavior,
+              block: "nearest",
+              inline: "center",
+            });
+          }
           playHoverSound();
         }
         return;

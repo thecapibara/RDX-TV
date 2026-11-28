@@ -208,12 +208,52 @@ function createDirectHttpAdapter(): HttpAdapter {
   };
 }
 
+function createDevBrowserHttpAdapter(): HttpAdapter {
+  return {
+    supportsCustomHeaders: true,
+    supportsDoh: true,
+    async request(req: HttpRequest): Promise<HttpResponse> {
+      const method = req.method || "GET";
+      const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      const proxyUrl = `/__rdx_dev_proxy?url=${encodeURIComponent(req.url)}`;
+      const headers: Record<string, string> = {};
+      if (req.headers?.["Content-Type"]) headers["Content-Type"] = req.headers["Content-Type"];
+      if (req.headers?.["X-Requested-With"]) headers["X-Requested-With"] = req.headers["X-Requested-With"];
+
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(proxyUrl, {
+          method,
+          headers,
+          body: req.body,
+          signal: controller.signal,
+        });
+        const text = await res.text();
+        return {
+          status: res.status,
+          ok: res.ok,
+          text,
+          finalUrl: req.url,
+          dohBypass: res.headers.get("X-RDX-DoH") === "1",
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
 export function createHttpAdapter(kind: PlatformKind): HttpAdapter {
   if (kind === "android-tv" && typeof window !== "undefined" && window.RDXAndroid?.httpRequestAsync) {
     return createAndroidHttpAdapter();
   }
   if (kind === "webos" && typeof window !== "undefined" && window.webOS?.service) {
     return createWebOsHttpAdapter();
+  }
+  const isDev = Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
+  if (kind === "web" && isDev) {
+    return createDevBrowserHttpAdapter();
   }
   return createDirectHttpAdapter();
 }

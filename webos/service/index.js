@@ -97,7 +97,8 @@ async function performRequest(targetUrl, method, headers, body, timeoutMs, redir
       timeout: timeoutMs || 12000,
       ...(dohIp
         ? {
-            lookup: (_h, _o, cb) => cb(null, dohIp, 4),
+            lookup: (_h, o, cb) =>
+              o && o.all ? cb(null, [{ address: dohIp, family: 4 }]) : cb(null, dohIp, 4),
             servername: u.hostname,
           }
         : {}),

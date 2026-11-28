@@ -47,7 +47,7 @@ interface MirrorModalProps {
   onCheckUpdates?: () => Promise<boolean> | boolean | void;
 }
 
-const APP_VERSION = "1.1.9";
+const APP_VERSION = "2.0.0-alpha.1";
 
 const PRESET_MIRRORS = [
   "https://rezka-tv.org",
@@ -595,7 +595,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
               <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-bold text-white">
                   <Shield className="w-4 h-4 text-zinc-400" />
-                  <span>RDX Relay / HTTP / SOCKS5 Проксі (Опціонально)</span>
+                  <span>HTTP / SOCKS5 Проксі (Опціонально)</span>
                 </div>
                 <div className="flex gap-3">
                   <input

@@ -1,15 +1,16 @@
 {
-  "name": "rdx",
+  "name": "rdx-tv",
   "private": true,
-  "version": "1.1.9",
+  "version": "2.0.0-alpha.1",
   "author": "justgl",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "build:tizen": "npm run build && rm -rf dist-tizen && cp -r dist dist-tizen && cp tizen/config.xml dist-tizen/config.xml",
-    "preview": "vite preview",
-    "tauri": "tauri"
+    "build:webos": "npm run build && rm -rf dist-webos && cp -r dist dist-webos && cp webos/appinfo.json dist-webos/appinfo.json",
+    "build:android-assets": "npm run build && rm -rf android-tv/app/src/main/assets/www && mkdir -p android-tv/app/src/main/assets/www && cp -r dist/* android-tv/app/src/main/assets/www/",
+    "preview": "vite preview"
   },
   "dependencies": {
     "clsx": "^2.1.1",

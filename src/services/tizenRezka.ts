@@ -301,11 +301,17 @@ async function solveAnubisChallenge(html: string, targetUrl: string): Promise<bo
     const prefix = "0".repeat(difficulty);
     const enc = new TextEncoder();
     const start = performance.now();
+    const MAX_POW_MS = 3500;
     let nonce = 0;
     let hashHex = "";
     let solved = false;
 
     while (nonce < 2_000_000) {
+      if ((nonce & 511) === 511) {
+        if (performance.now() - start > MAX_POW_MS) break;
+        // Yield to UI thread so weak ARMv7 Smart TVs never freeze/ANR during PoW
+        await new Promise<void>((r) => setTimeout(r, 0));
+      }
       hashHex = await sha256Hex(`${ch.randomData}${nonce}`, enc);
       if (hashHex.startsWith(prefix)) {
         solved = true;
@@ -778,13 +784,19 @@ export const tizenRezka = {
 
     if (recs.length === 0) return [];
 
-    const settled = await Promise.all(
-      recs.map(async (rec) => {
+    // Limit to 6 items and max 2 concurrent HTML searches to avoid RAM/DOMParser spikes on 1-2GB TVs
+    const limitedRecs = recs.slice(0, 6);
+    const settled: Array<MediaCard | null> = new Array(limitedRecs.length).fill(null);
+    let nextIdx = 0;
+    const workers = Array.from({ length: Math.min(2, limitedRecs.length) }, async () => {
+      while (nextIdx < limitedRecs.length) {
+        const idx = nextIdx++;
+        const rec = limitedRecs[idx];
         let results = await tizenRezka.searchMedia(baseUrl, rec.title).catch(() => []);
         if (results.length === 0 && rec.origTitle) {
           results = await tizenRezka.searchMedia(baseUrl, rec.origTitle).catch(() => []);
         }
-        return (
+        settled[idx] =
           results.find((card) => {
             if (excludeId && card.id === excludeId) return false;
             if (mediaType) {
@@ -797,10 +809,10 @@ export const tizenRezka = {
             }
             if (rec.year && card.misc_info.includes(rec.year)) return true;
             return true;
-          }) || null
-        );
-      })
-    );
+          }) || null;
+      }
+    });
+    await Promise.all(workers);
 
     const out: MediaCard[] = [];
     const usedIds = new Set<string>();

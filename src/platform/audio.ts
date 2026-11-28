@@ -1,10 +1,11 @@
 import type { AudioAdapter, AudioSoundKey, PlatformKind } from "./types";
 
+// Relative paths work both on https:// (Android WebViewAssetLoader / webOS) and file:// (Samsung Tizen WGT)
 const SOUND_PATHS: Record<Exclude<AudioSoundKey, "back">, string> = {
-  startup: "/startup.mp3",
-  hover: "/hovercard.mp3",
-  modal_open: "/opencard.mp3",
-  button_click: "/buttonclick.mp3",
+  startup: "./startup.mp3",
+  hover: "./hovercard.mp3",
+  modal_open: "./opencard.mp3",
+  button_click: "./buttonclick.mp3",
 };
 
 const decodedBuffers: Partial<Record<Exclude<AudioSoundKey, "back">, AudioBuffer>> = {};

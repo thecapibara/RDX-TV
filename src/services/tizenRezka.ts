@@ -1,8 +1,11 @@
 /**
- * Standalone TypeScript HDRezka Scraper & #h Stream Decryptor for Samsung Tizen (.wgt).
- * Packaged Tizen apps with <access origin="*" subdomains="true"/> bypass browser CORS
- * and communicate directly with HDRezka mirrors from the TV without any PC bridge.
+ * Unified TypeScript HDRezka Scraper & #h Stream Decryptor for RDX-TV v2.
+ * Routes all HTTP requests through `platform.http`:
+ * - Android TV: native Kotlin OkHttp (DoH, CookieJar, custom Referer/UA)
+ * - LG webOS: local Node.js webos-service (DoH, CookieJar, custom Referer/UA)
+ * - Samsung Tizen / Web: direct fetch (<access origin="*">), zero Cloudflare relay.
  */
+import { platform } from "../platform";
 import type {
   EpisodeTab,
   EpisodesData,
@@ -316,193 +319,80 @@ async function solveAnubisChallenge(html: string, targetUrl: string): Promise<bo
     const redir = `${parsed.pathname || "/"}${parsed.search || ""}`;
     const elapsed = Math.max(120, Math.min(30_000, Math.round(performance.now() - start)));
     const passUrl = `${parsed.origin}/.within.website/x/cmd/anubis/api/pass-challenge?id=${encodeURIComponent(ch.id)}&response=${hashHex}&nonce=${nonce}&redir=${encodeURIComponent(redir)}&elapsedTime=${elapsed}`;
-    const passRes = await fetch(passUrl, { method: "GET", credentials: "include" });
-    return passRes.ok || passRes.type === "opaqueredirect";
+    const passRes = await platform.http.request({ url: passUrl, method: "GET" });
+    return passRes.ok || passRes.status === 302 || passRes.status === 301;
   } catch {
     return false;
   }
 }
 
-const DEFAULT_TIZEN_RELAY_URL = (
-  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_TIZEN_RELAY_URL ||
-  "https://rdx-tv-relay.thecapibara-rdxtv.workers.dev"
-).trim();
-
-function getActiveRelayUrl(): string {
-  try {
-    const raw = localStorage.getItem("rdx_settings");
-    if (raw) {
-      const parsed = JSON.parse(raw) as { proxy_url?: string };
-      const p = (parsed.proxy_url || "").trim();
-      if (p.startsWith("http://") || p.startsWith("https://")) {
-        return p.replace(/\/+$/, "");
-      }
-    }
-  } catch {}
-  return DEFAULT_TIZEN_RELAY_URL.replace(/\/+$/, "");
-}
-
 const FETCH_TIMEOUT_MS = 12_000;
-const DIRECT_FALLBACK_TIMEOUT_MS = 8_000;
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs = FETCH_TIMEOUT_MS
-): Promise<Response> {
-  if (typeof AbortController !== "undefined") {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, { ...init, signal: controller.signal });
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`Timeout (${Math.round(timeoutMs / 1000)}s)`);
-      }
-      throw err;
-    } finally {
-      clearTimeout(timer);
-    }
+function originReferer(targetUrl: string): string {
+  try {
+    return `${new URL(targetUrl).origin}/`;
+  } catch {
+    return "";
   }
-  return await Promise.race([
-    fetch(url, init),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs)
-    ),
-  ]);
 }
 
-function buildFetchArgs(
-  targetUrl: string,
-  method: "GET" | "POST",
-  headers: Record<string, string>,
-  body?: string,
-  forceDirect = false
-): { url: string; init: RequestInit; viaRelay: boolean } {
-  const relay = forceDirect ? "" : getActiveRelayUrl();
-  if (relay) {
-    let referer = "";
-    try {
-      referer = `${new URL(targetUrl).origin}/`;
-    } catch {}
-    // Keep relay requests CORS-simple (no custom headers like X-RDX-Referer)
-    // so Samsung Tizen WebView (file://, Origin: null) never triggers failing OPTIONS preflights.
-    const relayHeaders: Record<string, string> = {};
-    if (method === "POST" && headers["Content-Type"]) {
-      relayHeaders["Content-Type"] = headers["Content-Type"];
-    }
-    const refQuery = referer ? `&ref=${encodeURIComponent(referer)}` : "";
-    return {
-      url: `${relay}/?url=${encodeURIComponent(targetUrl)}${refQuery}`,
-      init: {
-        method,
-        ...(Object.keys(relayHeaders).length > 0 ? { headers: relayHeaders } : {}),
-        ...(body !== undefined ? { body } : {}),
-      },
-      viaRelay: true,
+async function fetchHtml(url: string): Promise<{ text: string; dohBypass?: boolean }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const headers: Record<string, string> = {
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     };
-  }
-  return {
-    url: targetUrl,
-    init: {
-      method,
-      credentials: "include",
-      headers,
-      body,
-    },
-    viaRelay: false,
-  };
-}
-
-async function fetchHtmlOnce(url: string, forceDirect: boolean): Promise<string> {
-  const attempts = forceDirect ? 2 : 2;
-  const timeoutMs = forceDirect ? DIRECT_FALLBACK_TIMEOUT_MS : FETCH_TIMEOUT_MS;
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    const req = buildFetchArgs(
+    if (platform.http.supportsCustomHeaders) {
+      const ref = originReferer(url);
+      if (ref) headers.Referer = ref;
+    }
+    const res = await platform.http.request({
       url,
-      "GET",
-      {
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      undefined,
-      forceDirect
-    );
-    const res = await fetchWithTimeout(req.url, req.init, timeoutMs);
-    const text = await res.text();
+      method: "GET",
+      headers,
+      timeoutMs: FETCH_TIMEOUT_MS,
+    });
+    const text = res.text;
     if (isCloudflareChallenge(text, res.status)) {
       throw new Error(`Cloudflare challenge on ${url}`);
     }
-    if (!req.viaRelay && isAnubisHtml(text)) {
-      const solved = await solveAnubisChallenge(text, url);
-      if (solved) continue;
-      throw new Error(`Anubis challenge unsolved on ${url}`);
-    }
     if (isAnubisHtml(text)) {
-      throw new Error(`Anubis challenge persisted on ${url}`);
-    }
-    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
-    return text;
-  }
-  throw new Error(`Anubis challenge persisted on ${url}`);
-}
-
-async function fetchHtml(url: string): Promise<string> {
-  const hasRelay = Boolean(getActiveRelayUrl());
-  if (!hasRelay) {
-    return fetchHtmlOnce(url, true);
-  }
-  try {
-    return await fetchHtmlOnce(url, false);
-  } catch (relayErr) {
-    // Fallback to direct fetch in case the relay is unreachable or blocked by ISP/CORS on TV
-    try {
-      return await fetchHtmlOnce(url, true);
-    } catch {
-      throw relayErr;
-    }
-  }
-}
-
-async function postFormOnce(url: string, body: string, forceDirect: boolean): Promise<string> {
-  const timeoutMs = forceDirect ? DIRECT_FALLBACK_TIMEOUT_MS : FETCH_TIMEOUT_MS;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const req = buildFetchArgs(
-      url,
-      "POST",
-      {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body,
-      forceDirect
-    );
-    const res = await fetchWithTimeout(req.url, req.init, timeoutMs);
-    const text = await res.text();
-    if (!req.viaRelay && isAnubisHtml(text)) {
       const solved = await solveAnubisChallenge(text, url);
       if (solved) continue;
       throw new Error(`Anubis challenge unsolved on ${url}`);
     }
     if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
-    return text;
+    return { text, dohBypass: res.dohBypass };
   }
   throw new Error(`Anubis challenge persisted on ${url}`);
 }
 
 async function postForm(url: string, body: string): Promise<string> {
-  const hasRelay = Boolean(getActiveRelayUrl());
-  if (!hasRelay) {
-    return postFormOnce(url, body, true);
-  }
-  try {
-    return await postFormOnce(url, body, false);
-  } catch (relayErr) {
-    try {
-      return await postFormOnce(url, body, true);
-    } catch {
-      throw relayErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "X-Requested-With": "XMLHttpRequest",
+    };
+    if (platform.http.supportsCustomHeaders) {
+      const ref = originReferer(url);
+      if (ref) headers.Referer = ref;
     }
+    const res = await platform.http.request({
+      url,
+      method: "POST",
+      headers,
+      body,
+      timeoutMs: FETCH_TIMEOUT_MS,
+    });
+    const text = res.text;
+    if (isAnubisHtml(text)) {
+      const solved = await solveAnubisChallenge(text, url);
+      if (solved) continue;
+      throw new Error(`Anubis challenge unsolved on ${url}`);
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+    return text;
   }
+  throw new Error(`Anubis challenge persisted on ${url}`);
 }
 
 function formatMirrorError(err: unknown): string {
@@ -519,21 +409,21 @@ export const tizenRezka = {
   checkMirrorStatus: async (mirrorUrl: string): Promise<MirrorStatus> => {
     const clean = mirrorUrl.replace(/\/+$/, "");
     const start = performance.now();
-    const viaRelay = Boolean(getActiveRelayUrl());
     try {
-      const html = await fetchHtml(clean);
+      const { text: html, dohBypass } = await fetchHtml(clean);
       const latency_ms = Math.round(performance.now() - start);
       const hasCatalog = html.includes("b-content__inline_item");
+      const usedDoh = Boolean(dohBypass || platform.http.supportsDoh);
       return {
         mirror_url: clean,
         online: true,
         latency_ms,
         status_message: hasCatalog
-          ? viaRelay
-            ? "OK • Relay"
+          ? usedDoh
+            ? "OK • DoH"
             : "OK • Пряме"
           : "Обмежено",
-        doh_bypass: viaRelay,
+        doh_bypass: usedDoh,
         catalog_available: hasCatalog,
         stream_available: hasCatalog,
       };
@@ -544,7 +434,7 @@ export const tizenRezka = {
         online: false,
         latency_ms,
         status_message: formatMirrorError(err),
-        doh_bypass: viaRelay,
+        doh_bypass: platform.http.supportsDoh,
         catalog_available: false,
         stream_available: false,
       };
@@ -563,12 +453,12 @@ export const tizenRezka = {
     if (genre && GENRE_PATH_MAP[genre]) {
       const p = page && page > 1 ? `page/${page}/` : "";
       const qs = params.toString() ? `?${params.toString()}` : "";
-      const html = await fetchHtml(`${clean}/films/${GENRE_PATH_MAP[genre]}/${p}${qs}`);
+      const { text: html } = await fetchHtml(`${clean}/films/${GENRE_PATH_MAP[genre]}/${p}${qs}`);
       return parseCatalogHtml(html, clean);
     }
     const p = page && page > 1 ? `/page/${page}/` : "/";
     const qs = params.toString() ? `?${params.toString()}` : "";
-    const html = await fetchHtml(`${clean}${p}${qs}`);
+    const { text: html } = await fetchHtml(`${clean}${p}${qs}`);
     return parseCatalogHtml(html, clean);
   },
 
@@ -585,19 +475,19 @@ export const tizenRezka = {
       const targetCat = genre && ["films", "series", "cartoons", "animation"].includes(genre) ? genre : "";
       const effFilter = filter || "last";
       const path = targetCat ? `${targetCat}/${pageSlug}` : `new/${pageSlug}`;
-      const html = await fetchHtml(`${clean}/${path}?filter=${encodeURIComponent(effFilter)}`);
+      const { text: html } = await fetchHtml(`${clean}/${path}?filter=${encodeURIComponent(effFilter)}`);
       return parseCatalogHtml(html, clean);
     }
     const mappedGenre = genre ? GENRE_PATH_MAP[genre] || genre : "";
     const genreSlug = mappedGenre ? `${mappedGenre}/` : "";
     const qs = filter ? `?filter=${encodeURIComponent(filter)}` : "";
-    const html = await fetchHtml(`${clean}/${category}/${genreSlug}${pageSlug}${qs}`);
+    const { text: html } = await fetchHtml(`${clean}/${category}/${genreSlug}${pageSlug}${qs}`);
     return parseCatalogHtml(html, clean);
   },
 
   searchMedia: async (baseUrl: string, query: string): Promise<MediaCard[]> => {
     const clean = baseUrl.replace(/\/+$/, "");
-    const html = await fetchHtml(
+    const { text: html } = await fetchHtml(
       `${clean}/search/?do=search&subaction=search&q=${encodeURIComponent(query)}`
     );
     return parseCatalogHtml(html, clean);
@@ -631,7 +521,7 @@ export const tizenRezka = {
   getMediaDetails: async (baseUrl: string, itemUrl: string): Promise<MediaDetails> => {
     const clean = baseUrl.replace(/\/+$/, "");
     const fullUrl = resolveUrl(itemUrl, clean);
-    const html = await fetchHtml(fullUrl);
+    const { text: html } = await fetchHtml(fullUrl);
     const doc = new DOMParser().parseFromString(html, "text/html");
 
     const id =
@@ -998,7 +888,7 @@ async function resolveTmdbMatch(
               }
             }
 
-            const backdropUrl = `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`;
+            const backdropUrl = `https://image.tmdb.org/t/p/w780${item.backdrop_path}`;
             if (!best || score > best.score) {
               best = { score, id: item.id, mediaType: st, backdropUrl };
             }

@@ -1,0 +1,9 @@
+{
+  "name": "com.rdx.tv.service",
+  "version": "2.0.0",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "webos-service": "^0.1.0"
+  }
+}

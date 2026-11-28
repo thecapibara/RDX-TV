@@ -286,11 +286,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Fetch stream when translator / season / episode changes
   useEffect(() => {
     const reqId = ++streamReqIdRef.current;
+    // `initialStreams` embedded in HDRezka HTML always belongs to the HTML's `.active` translator
+    const htmlActiveTranslatorId = details.translators.find((t) => t.is_active)?.id;
+    const isHtmlDefaultTranslator =
+      !translatorId || (Boolean(htmlActiveTranslatorId) && translatorId === htmlActiveTranslatorId);
+    const isHtmlDefaultEpisode =
+      !isSeries ||
+      (season === (parseInt(details.seasons[0]?.id || "1", 10) || 1) &&
+        episode === (parseInt(details.episodes[0]?.episode_id || "1", 10) || 1));
+
     const shouldUseInitial =
       reqId === 1 &&
       initialStreams &&
       initialStreams.qualities.length > 0 &&
-      (!activeTranslatorId || activeTranslatorId === translatorId);
+      isHtmlDefaultTranslator &&
+      isHtmlDefaultEpisode;
 
     if (shouldUseInitial) {
       setStreamData(initialStreams);
@@ -312,7 +322,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         setErrorMsg(err instanceof Error ? err.message : "Не вдалося отримати потік");
         setPlayState("paused");
       });
-  }, [details.id, details.url, isSeries, translatorId, season, episode, initialStreams, activeTranslatorId]);
+  }, [details.id, details.url, details.translators, details.seasons, details.episodes, isSeries, translatorId, season, episode, initialStreams]);
 
   // Load selected stream URL into PlayerAdapter
   useEffect(() => {

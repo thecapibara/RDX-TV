@@ -1,5 +1,5 @@
 import type HlsType from "hls.js";
-import type { PlatformKind, PlayerAdapter, PlayerCallbacks, PlayerLoadOptions } from "./types";
+import type { AspectMode, PlatformKind, PlayerAdapter, PlayerCallbacks, PlayerLoadOptions } from "./types";
 
 /**
  * 1. Android TV Native Media3 / ExoPlayer Adapter (`window.RDXAndroid`)
@@ -54,6 +54,15 @@ class AndroidExoPlayerAdapter implements PlayerAdapter {
   }
   setVolume(_v: number) {}
   setMuted(_m: boolean) {}
+  setAspectMode(mode: AspectMode) {
+    window.RDXAndroid?.playerSetAspectMode?.(mode);
+  }
+  setAudioBoost(percent: number) {
+    window.RDXAndroid?.playerSetAudioBoost?.(percent);
+  }
+  setSubtitle(url: string | null) {
+    window.RDXAndroid?.playerSetSubtitle?.(url || "");
+  }
   destroy() {
     window.__rdxAndroidPlayerEvent = undefined;
     window.RDXAndroid?.playerClose?.();
@@ -150,6 +159,19 @@ class TizenAvPlayAdapter implements PlayerAdapter {
   }
   setVolume(_v: number) {}
   setMuted(_m: boolean) {}
+  setAspectMode(mode: AspectMode) {
+    try {
+      const av = window.webapis?.avplay;
+      if (!av) return;
+      const m =
+        mode === "fill"
+          ? "PLAYER_DISPLAY_MODE_CROPPED_FULL"
+          : mode === "stretch"
+            ? "PLAYER_DISPLAY_MODE_FULL_SCREEN"
+            : "PLAYER_DISPLAY_MODE_LETTER_BOX";
+      av.setDisplayMethod(m);
+    } catch {}
+  }
   destroy() {
     try {
       window.webapis?.avplay?.stop();

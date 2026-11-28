@@ -52,6 +52,8 @@ export interface PlayerCallbacks {
   onResolution?: (width: number, height: number) => void;
 }
 
+export type AspectMode = "fit" | "fill" | "stretch";
+
 export interface PlayerAdapter {
   readonly kind: "android-exo" | "tizen-avplay" | "webos-native" | "html5-hls";
   readonly isExternalSurface: boolean;
@@ -63,6 +65,9 @@ export interface PlayerAdapter {
   setPlaybackRate(rate: number): void;
   setVolume(volume01: number): void;
   setMuted(muted: boolean): void;
+  setAspectMode?(mode: AspectMode): void;
+  setAudioBoost?(percent: number): void;
+  setSubtitle?(url: string | null): void;
   destroy(): void;
 }
 
@@ -75,6 +80,9 @@ export interface RDXAndroidBridge {
   playerPause?(): void;
   playerSeek?(seconds: number): void;
   playerSetSpeed?(rate: number): void;
+  playerSetAspectMode?(mode: string): void;
+  playerSetAudioBoost?(percent: number): void;
+  playerSetSubtitle?(url: string): void;
   playerClose?(): void;
   exitApp?(): void;
 }

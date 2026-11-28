@@ -17,6 +17,8 @@ import {
   Crown,
   Volume2,
   VolumeX,
+  Maximize,
+  Info,
 } from "lucide-react";
 import { UaFlag } from "./UaFlag";
 import type {
@@ -28,7 +30,7 @@ import type {
   EpisodeTab,
 } from "../types";
 import { api } from "../services/api";
-import { platform, type PlayerAdapter } from "../platform";
+import { platform, type AspectMode, type PlayerAdapter } from "../platform";
 import { cn } from "../lib/utils";
 import { playBackSound, playButtonClickSound } from "../services/sound";
 
@@ -49,6 +51,13 @@ interface VideoPlayerProps {
 }
 
 type DrawerKind = null | "quality" | "translator" | "episodes" | "subtitles" | "speed" | "sleep";
+type SubSize = "sm" | "md" | "lg";
+
+const ASPECT_LABELS: Record<AspectMode, string> = {
+  fit: "Авто",
+  fill: "Заповнити",
+  stretch: "16:9",
+};
 
 function isPremiumQuality(label?: string | null): boolean {
   if (!label) return false;
@@ -158,6 +167,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [nextCountdown, setNextCountdown] = useState<number | null>(null);
   const [engineKind, setEngineKind] = useState<PlayerAdapter["kind"]>("html5-hls");
   const [isExternalSurface, setIsExternalSurface] = useState<boolean>(false);
+  const [aspectMode, setAspectMode] = useState<AspectMode>("fit");
+  const [audioBoost, setAudioBoost] = useState<number>(100);
+  const [showStats, setShowStats] = useState<boolean>(false);
+  const [subSize, setSubSize] = useState<SubSize>(() => {
+    try {
+      const s = localStorage.getItem("rdx_sub_size");
+      if (s === "sm" || s === "md" || s === "lg") return s;
+    } catch {}
+    return "md";
+  });
 
   const activeTranslator = useMemo(
     () => details.translators.find((t) => t.id === translatorId) || details.translators[0],
@@ -484,7 +503,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       if (drawer) return; // Let D-pad navigate inside drawer
 
-      if (code === "Space" || key === "MediaPlayPause" || e.keyCode === 10252) {
+      if (code === "KeyI") {
+        e.preventDefault();
+        setShowStats((prev) => !prev);
+      } else if (code === "Space" || key === "MediaPlayPause" || e.keyCode === 10252) {
         e.preventDefault();
         togglePlay();
       } else if (key === "MediaPlay" || e.keyCode === 415) {
@@ -533,7 +555,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {!isExternalSurface && (
         <video
           ref={videoRef}
-          className="absolute inset-0 w-full h-full object-contain bg-black"
+          className={cn(
+            "absolute inset-0 w-full h-full bg-black",
+            aspectMode === "fill"
+              ? "object-cover"
+              : aspectMode === "stretch"
+                ? "object-fill"
+                : "object-contain"
+          )}
+          style={{
+            fontSize: subSize === "lg" ? "1.35rem" : subSize === "sm" ? "0.9rem" : "1.1rem",
+          }}
           playsInline
           onClick={togglePlay}
         >
@@ -541,6 +573,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <track kind="subtitles" src={selectedSubUrl} srcLang="uk" label="Субтитри" default />
           )}
         </video>
+      )}
+
+      {/* Stream Diagnostics Overlay */}
+      {showStats && (
+        <div className="absolute top-20 right-8 z-30 w-72 rounded-2xl bg-zinc-950/95 border border-white/15 p-4 text-xs text-zinc-200 space-y-1.5 pointer-events-none">
+          <div className="font-black text-rose-400 uppercase tracking-wider mb-1">
+            Статистика потоку
+          </div>
+          <div className="flex justify-between">
+            <span className="text-zinc-400">Рушій:</span>
+            <span className="font-bold">{ENGINE_LABELS[engineKind]}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-zinc-400">Якість / Кадр:</span>
+            <span className="font-bold">
+              {selectedQuality?.label || "—"} {resolution ? `(${resolution})` : ""}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-zinc-400">Буфер попереду:</span>
+            <span className="font-bold">+{Math.max(0, Math.round(bufferedTime - currentTime))} с</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-zinc-400">Масштаб:</span>
+            <span className="font-bold">{ASPECT_LABELS[aspectMode]}</span>
+          </div>
+          {engineKind === "android-exo" && (
+            <div className="flex justify-between">
+              <span className="text-zinc-400">Підсилення звуку:</span>
+              <span className="font-bold">{audioBoost}%</span>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Loading / Buffering Spinner */}
@@ -788,6 +853,42 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </button>
             <button
               data-tv-focusable
+              onClick={() => {
+                const next: AspectMode =
+                  aspectMode === "fit" ? "fill" : aspectMode === "fill" ? "stretch" : "fit";
+                setAspectMode(next);
+                adapterRef.current?.setAspectMode?.(next);
+                showNotice(`Масштаб: ${ASPECT_LABELS[next]}`);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 border border-white/15 text-xs font-bold text-white cursor-pointer"
+              title="Масштаб екрана"
+            >
+              <Maximize className="w-4 h-4" />
+              <span>{ASPECT_LABELS[aspectMode]}</span>
+            </button>
+            {engineKind === "android-exo" && (
+              <button
+                data-tv-focusable
+                onClick={() => {
+                  const next = audioBoost === 100 ? 150 : audioBoost === 150 ? 200 : 100;
+                  setAudioBoost(next);
+                  adapterRef.current?.setAudioBoost?.(next);
+                  showNotice(`Звук: ${next}%`);
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer",
+                  audioBoost > 100
+                    ? "bg-rose-600/30 border-rose-500 text-rose-200"
+                    : "bg-zinc-900/90 border-white/15 text-white"
+                )}
+                title="Підсилення гучності"
+              >
+                <Volume2 className="w-4 h-4" />
+                <span>{audioBoost}%</span>
+              </button>
+            )}
+            <button
+              data-tv-focusable
               onClick={() => setDrawer(drawer === "sleep" ? null : "sleep")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer",
@@ -798,6 +899,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             >
               <Timer className="w-4 h-4" />
               <span>{sleepMinutes > 0 ? `${sleepMinutes} хв` : "Сон"}</span>
+            </button>
+            <button
+              data-tv-focusable
+              onClick={() => setShowStats((s) => !s)}
+              className={cn(
+                "p-2 rounded-xl border text-xs font-bold cursor-pointer",
+                showStats
+                  ? "bg-rose-600/30 border-rose-500 text-rose-200"
+                  : "bg-zinc-900/90 border-white/15 text-zinc-200"
+              )}
+              title="Статистика потоку (I)"
+            >
+              <Info className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -964,11 +1078,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           )}
 
           {drawer === "subtitles" && streamData && (
-            <div className="space-y-2">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                {(["sm", "md", "lg"] as SubSize[]).map((sz) => (
+                  <button
+                    key={sz}
+                    data-tv-focusable
+                    onClick={() => {
+                      setSubSize(sz);
+                      try {
+                        localStorage.setItem("rdx_sub_size", sz);
+                      } catch {}
+                    }}
+                    className={cn(
+                      "flex-1 py-2 rounded-xl border text-xs font-bold cursor-pointer",
+                      subSize === sz
+                        ? "bg-rose-600 border-rose-500 text-white"
+                        : "bg-zinc-900 border-white/10 text-zinc-300"
+                    )}
+                  >
+                    {sz === "sm" ? "Малий" : sz === "md" ? "Середній" : "Великий"}
+                  </button>
+                ))}
+              </div>
               <button
                 data-tv-focusable
                 onClick={() => {
                   setSelectedSubUrl("");
+                  adapterRef.current?.setSubtitle?.(null);
                   setDrawer(null);
                 }}
                 className={cn(
@@ -987,6 +1124,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   data-tv-focusable
                   onClick={() => {
                     setSelectedSubUrl(sub.url);
+                    adapterRef.current?.setSubtitle?.(sub.url);
                     setDrawer(null);
                   }}
                   className={cn(

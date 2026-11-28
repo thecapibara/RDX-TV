@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.SoundPool
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -19,7 +20,9 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -27,6 +30,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.webkit.WebViewAssetLoader
 import okhttp3.Cookie
@@ -55,6 +59,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var playerView: PlayerView
     private var exoPlayer: ExoPlayer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var currentMediaUrl: String = ""
     private var soundPool: SoundPool? = null
     private val soundIds = ConcurrentHashMap<String, Int>()
 
@@ -284,6 +290,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         exoPlayer = player
+        currentMediaUrl = url
         playerView.player = player
         playerView.visibility = View.VISIBLE
 
@@ -296,8 +303,63 @@ class MainActivity : AppCompatActivity() {
         mainHandler.post(progressTicker)
     }
 
+    @OptIn(UnstableApi::class)
+    private fun applyAspectMode(mode: String) {
+        playerView.resizeMode = when (mode) {
+            "fill" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            "stretch" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun applyAudioBoost(percent: Int) {
+        val sessionId = exoPlayer?.audioSessionId ?: return
+        if (sessionId == C.AUDIO_SESSION_ID_UNSET) return
+        try {
+            loudnessEnhancer?.release()
+            loudnessEnhancer = null
+            if (percent > 100) {
+                val gainMb = ((percent - 100) * 12).coerceAtMost(1500)
+                loudnessEnhancer = LoudnessEnhancer(sessionId).apply {
+                    setTargetGain(gainMb)
+                    enabled = true
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun applySubtitleUrl(subUrl: String) {
+        val player = exoPlayer ?: return
+        if (currentMediaUrl.isEmpty()) return
+        val pos = player.currentPosition
+        val wasPlaying = player.playWhenReady
+        val builder = MediaItem.Builder().setUri(Uri.parse(currentMediaUrl))
+        if (subUrl.isNotEmpty()) {
+            val mime = if (subUrl.endsWith(".srt", ignoreCase = true)) {
+                MimeTypes.APPLICATION_SUBRIP
+            } else {
+                MimeTypes.TEXT_VTT
+            }
+            val sub = MediaItem.SubtitleConfiguration.Builder(Uri.parse(subUrl))
+                .setMimeType(mime)
+                .setLanguage("uk")
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
+            builder.setSubtitleConfigurations(listOf(sub))
+        }
+        player.setMediaItem(builder.build(), pos)
+        player.prepare()
+        player.playWhenReady = wasPlaying
+    }
+
     private fun releaseNativePlayer() {
         mainHandler.removeCallbacks(progressTicker)
+        try {
+            loudnessEnhancer?.release()
+        } catch (_: Exception) {}
+        loudnessEnhancer = null
         exoPlayer?.release()
         exoPlayer = null
         playerView.player = null
@@ -407,6 +469,21 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun playerSetSpeed(rate: Double) {
             mainHandler.post { exoPlayer?.playbackParameters = PlaybackParameters(rate.toFloat()) }
+        }
+
+        @JavascriptInterface
+        fun playerSetAspectMode(mode: String) {
+            mainHandler.post { applyAspectMode(mode) }
+        }
+
+        @JavascriptInterface
+        fun playerSetAudioBoost(percent: Int) {
+            mainHandler.post { applyAudioBoost(percent) }
+        }
+
+        @JavascriptInterface
+        fun playerSetSubtitle(url: String) {
+            mainHandler.post { applySubtitleUrl(url) }
         }
 
         @JavascriptInterface

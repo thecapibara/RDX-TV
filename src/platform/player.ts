@@ -273,6 +273,7 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
+        progressive: false,
         startPosition: opts.startSec && opts.startSec > 0 ? opts.startSec : -1,
         // Tight TV RAM budget (18s forward, 30s max, 8s backBuffer vs 150s+ desktop)
         maxBufferLength: 18,
@@ -282,26 +283,52 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
         maxBufferHole: 1.2,
       });
       this.hls = hls;
-      hls.loadSource(opts.url);
-      hls.attachMedia(video);
 
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => {});
-      });
-
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          hls.startLoad();
-        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          hls.recoverMediaError();
-        } else if (opts.fallbackUrl) {
+      let mediaErrorRetries = 0;
+      let firstSegmentLoaded = false;
+      const watchdog = window.setTimeout(() => {
+        if (firstSegmentLoaded || this.hls !== hls) return;
+        if (opts.fallbackUrl) {
           hls.destroy();
           this.hls = null;
           video.src = opts.fallbackUrl;
           video.load();
           video.play().catch(() => {});
         } else {
+          callbacks.onError?.("Таймаут завантаження HLS-потоку (8с)");
+        }
+      }, 8000);
+
+      const clearWatchdog = () => {
+        firstSegmentLoaded = true;
+        window.clearTimeout(watchdog);
+      };
+
+      hls.loadSource(opts.url);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.FRAG_LOADED, clearWatchdog);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+      });
+
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!data.fatal) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && mediaErrorRetries < 2) {
+          mediaErrorRetries++;
+          hls.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaErrorRetries < 2) {
+          mediaErrorRetries++;
+          hls.recoverMediaError();
+        } else if (opts.fallbackUrl) {
+          clearWatchdog();
+          hls.destroy();
+          this.hls = null;
+          video.src = opts.fallbackUrl;
+          video.load();
+          video.play().catch(() => {});
+        } else {
+          clearWatchdog();
           callbacks.onError?.(`HLS error: ${data.details}`);
         }
       });

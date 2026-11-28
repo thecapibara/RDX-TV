@@ -34,6 +34,8 @@ import {
   setAccentColor,
   getBgTheme,
   setBgTheme,
+  getOledCare,
+  setOledCare,
   ACCENT_OPTIONS,
   type AccentColor,
   type BgTheme,
@@ -162,6 +164,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
   const [uiSounds, setUiSounds] = useState<boolean>(() => getUiSoundsEnabled());
   const [accentColor, setAccentColorState] = useState<AccentColor>(() => getAccentColor());
   const [bgTheme, setBgThemeState] = useState<BgTheme>(() => getBgTheme());
+  const [oledCare, setOledCareState] = useState<boolean>(() => getOledCare());
 
   useTvBack(isOpen, onClose);
 
@@ -822,6 +825,18 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              <TvSwitch
+                checked={oledCare}
+                onToggle={() => {
+                  const next = !oledCare;
+                  setOledCareState(next);
+                  setOledCare(next);
+                }}
+                label="OLED Care (захист екрана)"
+                description="М'який білий текст (82%) проти ореолу та вигоряння на OLED ТВ"
+                icon={<Moon className="w-5 h-5" />}
+              />
 
               <TvSwitch
                 checked={startupSound}

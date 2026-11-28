@@ -12,6 +12,9 @@
           var b = localStorage.getItem("rdx_bg_theme") || "oled";
           document.documentElement.setAttribute("data-accent", a);
           document.documentElement.setAttribute("data-bg", b);
+          if (localStorage.getItem("rdx_oled_care") === "true") {
+            document.documentElement.setAttribute("data-oled-care", "on");
+          }
           var cm = navigator.userAgent.match(/Chrome\/(\d+)/);
           var isTvDevice =
             Boolean(window.RDXAndroid) ||

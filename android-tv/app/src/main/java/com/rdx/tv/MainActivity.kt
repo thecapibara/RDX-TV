@@ -18,8 +18,10 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.AudioAttributes as Media3AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -28,8 +30,10 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.webkit.WebViewAssetLoader
@@ -50,17 +54,24 @@ import java.util.concurrent.TimeUnit
 
 /**
  * RDX-TV v2 Lightweight Android TV Shell (32-bit armeabi-v7a & 64-bit arm64-v8a).
- * - Hardware Media3/ExoPlayer SurfaceView underneath for smooth 1080p/4K playback on 1-2GB RAM TVs
+ * - Hardware Media3/ExoPlayer SurfaceView underneath (16MB capped buffer, OkHttp DoH, AudioFocus)
  * - Transparent Preact WebView OSD/Catalog served via WebViewAssetLoader
  * - Native OkHttp + DoH (1.1.1.1) + CookieJar + SoundPool exposed via `window.RDXAndroid`
  */
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val MAX_HTTP_BODY_BYTES = 4L * 1024L * 1024L // 4 MB OOM guard on 32-bit TV
+        private const val PLAYER_TARGET_BUFFER_BYTES = 16 * 1024 * 1024 // 16 MB max video buffer
+    }
 
     private lateinit var webView: WebView
     private lateinit var playerView: PlayerView
     private var exoPlayer: ExoPlayer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var currentMediaUrl: String = ""
+    private var currentFallbackUrl: String = ""
+    private var usedFallback: Boolean = false
     private var soundPool: SoundPool? = null
     private val soundIds = ConcurrentHashMap<String, Int>()
 
@@ -131,6 +142,16 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Forward hardware TV remote Back button to JS (`rdx-tv-back`) instead of killing the Activity
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                webView.evaluateJavascript(
+                    "window.dispatchEvent(new CustomEvent('rdx-tv-back'));",
+                    null
+                )
+            }
+        })
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -227,18 +248,31 @@ class MainActivity : AppCompatActivity() {
         val payload = JSONObject(payloadJson)
         val url = payload.optString("url", "")
         if (url.isEmpty()) return
+        val fallbackUrl = payload.optString("fallbackUrl", "")
         val startSec = payload.optDouble("startSec", 0.0)
 
         releaseNativePlayer()
 
-        // Tight 1-2GB RAM TV buffer config (15s min / 30s max)
+        // Tight 1-2GB RAM TV buffer config: capped at 16 MB (prioritize size threshold over time)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 30_000, 1_500, 3_000)
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setTargetBufferBytes(PLAYER_TARGET_BUFFER_BYTES)
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .build()
+
+        val dataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
+            .setUserAgent("Mozilla/5.0 (Linux; Android 11; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+        val mediaAudioAttrs = Media3AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
             .build()
 
         val player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setLoadControl(loadControl)
+            .setAudioAttributes(mediaAudioAttrs, true)
+            .setHandleAudioBecomingNoisy(true)
             .build()
 
         player.addListener(object : Player.Listener {
@@ -263,10 +297,13 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                emitPlayerEvent(
-                    JSONObject().put("type", "state")
-                        .put("state", if (isPlaying) "playing" else "paused")
-                )
+                // Only emit playing/paused when READY so we never overwrite buffering or ended states
+                if (player.playbackState == Player.STATE_READY) {
+                    emitPlayerEvent(
+                        JSONObject().put("type", "state")
+                            .put("state", if (isPlaying) "playing" else "paused")
+                    )
+                }
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -281,6 +318,15 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (!usedFallback && currentFallbackUrl.isNotEmpty() && currentFallbackUrl != currentMediaUrl) {
+                    usedFallback = true
+                    currentMediaUrl = currentFallbackUrl
+                    val pos = player.currentPosition.coerceAtLeast(0L)
+                    player.setMediaItem(MediaItem.fromUri(Uri.parse(currentFallbackUrl)), pos)
+                    player.prepare()
+                    player.playWhenReady = true
+                    return
+                }
                 emitPlayerEvent(
                     JSONObject()
                         .put("type", "error")
@@ -291,6 +337,8 @@ class MainActivity : AppCompatActivity() {
 
         exoPlayer = player
         currentMediaUrl = url
+        currentFallbackUrl = fallbackUrl
+        usedFallback = false
         playerView.player = player
         playerView.visibility = View.VISIBLE
 
@@ -369,12 +417,19 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         exoPlayer?.pause()
+        webView.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webView.onResume()
     }
 
     override fun onDestroy() {
         releaseNativePlayer()
         soundPool?.release()
         ioExecutor.shutdownNow()
+        webView.destroy()
         super.onDestroy()
     }
 
@@ -388,6 +443,7 @@ class MainActivity : AppCompatActivity() {
                     val reqObj = JSONObject(payloadJson)
                     val url = reqObj.getString("url")
                     val method = reqObj.optString("method", "GET")
+                    val timeoutMs = reqObj.optLong("timeoutMs", 12_000L).coerceIn(2_000L, 30_000L)
                     val bodyStr = if (reqObj.isNull("body")) null else reqObj.optString("body")
                     val headersObj = reqObj.optJSONObject("headers")
 
@@ -418,10 +474,16 @@ class MainActivity : AppCompatActivity() {
                         builder.get()
                     }
 
-                    okHttpClient.newCall(builder.build()).execute().use { res ->
+                    val callClient = okHttpClient.newBuilder()
+                        .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                        .build()
+
+                    callClient.newCall(builder.build()).execute().use { res ->
                         out.put("status", res.code)
                         out.put("ok", res.isSuccessful)
-                        out.put("text", res.body?.string() ?: "")
+                        // Bounded 4MB read prevents 32-bit OOM on unexpected huge responses
+                        val text = res.peekBody(MAX_HTTP_BODY_BYTES).string()
+                        out.put("text", text)
                         out.put("finalUrl", res.request.url.toString())
                         out.put("dohBypass", true)
                     }

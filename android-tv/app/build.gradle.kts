@@ -45,9 +45,10 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.webkit:webkit:1.12.1")
 
-    // Native hardware video player (ExoPlayer / Media3)
+    // Native hardware video player (ExoPlayer / Media3 + OkHttp DataSource for DoH/Cookies)
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
 
     // Native HTTP with DNS-over-HTTPS (1.1.1.1 / 8.8.8.8) & CookieJar

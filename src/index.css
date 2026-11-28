@@ -158,7 +158,75 @@
   box-shadow: 0 0 0 3px var(--accent-500, #f43f5e), 0 0 18px rgba(244, 63, 94, 0.35) !important;
 }
 
-/* Low-GPU Smart TV optimizations (Samsung Tizen / WebOS / older Android TV) */
+/* GPU Compositor-only TV animations (opacity + transform only = 60fps on 1-2GB TVs) */
+@keyframes rdxHeroFade {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rdxSlideUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes rdxModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rdxDrawerIn {
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.rdx-anim-hero {
+  animation: rdxHeroFade 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.rdx-anim-slide-up {
+  animation: rdxSlideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.rdx-anim-modal {
+  animation: rdxModalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.rdx-anim-drawer {
+  animation: rdxDrawerIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Smooth focus lift for TV cards + keep cards clear of fixed TopBar when scrolling up */
+[data-tv-focusable] {
+  scroll-margin-top: 96px;
+  scroll-margin-bottom: 48px;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+/* Low-GPU Smart TV optimizations (Android TV / Samsung Tizen / LG webOS) */
 .rdx-low-gpu *,
 .rdx-low-gpu *::before,
 .rdx-low-gpu *::after {
@@ -168,6 +236,42 @@
 
 .rdx-low-gpu .blur-3xl,
 .rdx-low-gpu .blur-2xl,
-.rdx-low-gpu .blur-xl {
+.rdx-low-gpu .blur-xl,
+.rdx-low-gpu .blur-lg,
+.rdx-low-gpu .blur-md {
   filter: none !important;
+}
+
+.rdx-low-gpu [class*="blur-["] {
+  filter: none !important;
+}
+
+/* OLED Care: softens pure #FFFFFF UI text (~82% luminance) & harsh glows to eliminate OLED halation/fringing
+   and reduce static UI burn-in while keeping posters (<img>) and video (<video>) at 100% brightness */
+html[data-oled-care="on"] {
+  --color-white: #d4d4dc;
+}
+
+html[data-oled-care="on"] .text-white {
+  color: #d4d4dc !important;
+}
+
+html[data-oled-care="on"] .text-zinc-50,
+html[data-oled-care="on"] .text-zinc-100 {
+  color: #c8c8d2 !important;
+}
+
+html[data-oled-care="on"] .text-zinc-200 {
+  color: #bcbcc8 !important;
+}
+
+html[data-oled-care="on"] h1,
+html[data-oled-care="on"] h2,
+html[data-oled-care="on"] h3,
+html[data-oled-care="on"] h4 {
+  text-shadow: none !important;
+}
+
+html[data-oled-care="on"] video::cue {
+  color: #d4d4dc !important;
 }

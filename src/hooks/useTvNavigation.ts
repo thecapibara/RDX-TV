@@ -3,6 +3,29 @@ import { playHoverSound, playButtonClickSound, playBackSound } from "../services
 
 export const TV_BACK_EVENT = "rdx-tv-back";
 
+/** LIFO stack of TV Back handlers so the top-most modal/drawer always closes first */
+const tvBackStack: Array<() => void> = [];
+
+function dispatchTvBack() {
+  if (tvBackStack.length > 0) {
+    const top = tvBackStack[tvBackStack.length - 1];
+    top();
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(TV_BACK_EVENT));
+}
+
+// Bridge external hardware Back dispatches (e.g. Android MainActivity OnBackPressedCallback)
+if (typeof window !== "undefined") {
+  window.addEventListener(TV_BACK_EVENT, (e: Event) => {
+    if (tvBackStack.length > 0) {
+      e.stopImmediatePropagation();
+      const top = tvBackStack[tvBackStack.length - 1];
+      top();
+    }
+  });
+}
+
 const isTextInput = (el: Element | null): boolean => {
   if (!el) return false;
   const tag = el.tagName.toLowerCase();
@@ -27,10 +50,23 @@ const getActiveScope = (): ParentNode => {
   return document;
 };
 
-const getFocusableElements = (scope: ParentNode): HTMLElement[] => {
-  return Array.from(
-    scope.querySelectorAll<HTMLElement>("[data-tv-focusable]")
-  ).filter(isVisible);
+interface FocusCandidate {
+  el: HTMLElement;
+  rect: DOMRect;
+}
+
+const getFocusableCandidates = (scope: ParentNode): FocusCandidate[] => {
+  const out: FocusCandidate[] = [];
+  const nodes = scope.querySelectorAll<HTMLElement>("[data-tv-focusable]");
+  for (let i = 0; i < nodes.length; i++) {
+    const el = nodes[i];
+    if (el.hasAttribute("disabled") || el.getAttribute("aria-hidden") === "true") continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      out.push({ el, rect });
+    }
+  }
+  return out;
 };
 
 export function focusFirstInScope(scope?: ParentNode) {
@@ -41,10 +77,10 @@ export function focusFirstInScope(scope?: ParentNode) {
     auto.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
     return;
   }
-  const list = getFocusableElements(targetScope);
+  const list = getFocusableCandidates(targetScope);
   if (list.length > 0) {
-    list[0].focus({ preventScroll: true });
-    list[0].scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
+    list[0].el.focus({ preventScroll: true });
+    list[0].el.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
   }
 }
 
@@ -52,20 +88,20 @@ type Direction = "up" | "down" | "left" | "right";
 
 function findBestNeighbor(
   current: HTMLElement,
-  candidates: HTMLElement[],
+  candidates: FocusCandidate[],
   dir: Direction
 ): HTMLElement | null {
   const cRect = current.getBoundingClientRect();
   const cx = cRect.left + cRect.width / 2;
   const cy = cRect.top + cRect.height / 2;
   const currentRow = current.closest("[data-tv-row]");
+  const currentInHeader = Boolean(current.closest("header"));
 
   let best: HTMLElement | null = null;
   let bestScore = Infinity;
 
-  for (const el of candidates) {
+  for (const { el, rect: r } of candidates) {
     if (el === current) continue;
-    const r = el.getBoundingClientRect();
     const ex = r.left + r.width / 2;
     const ey = r.top + r.height / 2;
 
@@ -94,6 +130,11 @@ function findBestNeighbor(
     }
 
     let score = primary + ortho * 2.6;
+
+    // Never jump into fixed/sticky <header> while pressing Up if any content exists above
+    if (dir === "up" && !currentInHeader && el.closest("header")) {
+      score += 50000;
+    }
 
     // Strongly prefer staying in the same horizontal row on Left/Right
     if ((dir === "left" || dir === "right") && currentRow) {
@@ -145,7 +186,7 @@ export function useTvNavigation(disabled: boolean = false) {
       if (isBackKey) {
         e.preventDefault();
         playBackSound();
-        window.dispatchEvent(new CustomEvent(TV_BACK_EVENT));
+        dispatchTvBack();
         return;
       }
 
@@ -162,7 +203,7 @@ export function useTvNavigation(disabled: boolean = false) {
 
       if (dir) {
         const scope = getActiveScope();
-        const candidates = getFocusableElements(scope);
+        const candidates = getFocusableCandidates(scope);
         if (candidates.length === 0) return;
 
         e.preventDefault();
@@ -182,7 +223,21 @@ export function useTvNavigation(disabled: boolean = false) {
         const next = findBestNeighbor(active, candidates, dir);
         if (next) {
           next.focus({ preventScroll: true });
-          next.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
+          const scrollBehavior: ScrollBehavior = e.repeat ? "auto" : "smooth";
+          // When focus returns to Hero actions or fixed TopBar, scroll the actual <main> container (and window) to top
+          if (next.closest('[data-tv-row="hero-actions"]') || next.closest("header")) {
+            const mainEl = document.querySelector("main");
+            if (mainEl) {
+              mainEl.scrollTo({ top: 0, behavior: scrollBehavior });
+            }
+            window.scrollTo({ top: 0, behavior: scrollBehavior });
+          } else {
+            next.scrollIntoView({
+              behavior: scrollBehavior,
+              block: "nearest",
+              inline: "center",
+            });
+          }
           playHoverSound();
         }
         return;
@@ -207,16 +262,15 @@ export function useTvNavigation(disabled: boolean = false) {
 }
 
 /**
- * Subscribe to the TV remote Back button when a modal/drawer is open.
+ * Subscribe to the TV remote Back button when a modal/drawer is open (LIFO stack order).
  */
 export function useTvBack(enabled: boolean, onBack: () => void) {
   useEffect(() => {
     if (!enabled) return;
-    const handler = (e: Event) => {
-      e.stopImmediatePropagation();
-      onBack();
+    tvBackStack.push(onBack);
+    return () => {
+      const idx = tvBackStack.lastIndexOf(onBack);
+      if (idx >= 0) tvBackStack.splice(idx, 1);
     };
-    window.addEventListener(TV_BACK_EVENT, handler);
-    return () => window.removeEventListener(TV_BACK_EVENT, handler);
   }, [enabled, onBack]);
 }

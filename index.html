@@ -2,7 +2,7 @@
 <html lang="uk" class="dark" style="background-color: var(--bg-base, #000000); color: #f4f4f5; scrollbar-gutter: stable;">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="icon" type="image/png" href="./logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RDX-TV</title>
     <script>
@@ -12,9 +12,14 @@
           var b = localStorage.getItem("rdx_bg_theme") || "oled";
           document.documentElement.setAttribute("data-accent", a);
           document.documentElement.setAttribute("data-bg", b);
+          if (localStorage.getItem("rdx_oled_care") === "true") {
+            document.documentElement.setAttribute("data-oled-care", "on");
+          }
           var cm = navigator.userAgent.match(/Chrome\/(\d+)/);
-          var isSmartTv = /Tizen|SMART-TV|Web0S/i.test(navigator.userAgent);
-          if (isSmartTv || (cm && parseInt(cm[1], 10) < 90)) {
+          var isTvDevice =
+            Boolean(window.RDXAndroid) ||
+            /Tizen|SMART-TV|Web0S|webOS|NetCast|Android|AFT|BRAVIA|MIBOX/i.test(navigator.userAgent);
+          if (isTvDevice || (cm && parseInt(cm[1], 10) < 90)) {
             document.documentElement.classList.add("rdx-low-gpu");
           }
         } catch(e) {}
@@ -423,7 +428,7 @@
           </g>
         </svg>
         <div class="rdx-boot-logo-wrap">
-          <img src="/logo.png" alt="RDX-TV" class="rdx-boot-logo" />
+          <img src="./logo.png" alt="RDX-TV" class="rdx-boot-logo" />
           <div class="rdx-logo-sheen"></div>
         </div>
       </div>
@@ -480,13 +485,16 @@
           ant.addEventListener("animationstart", playBubbles, { once: true });
         }
 
-        // On Android TV & Samsung Tizen (where native rodio is not active), also play startup.mp3
+        // Play startup.mp3 via native Android SoundPool or Web Audio on Smart TV
         try {
-          var isDesktopTauri = Boolean(window.__TAURI_INTERNALS__) && !/android/i.test(navigator.userAgent);
-          if (!isDesktopTauri && localStorage.getItem("rdx_startup_sound") !== "false") {
-            var a = new Audio("/startup.mp3");
-            a.volume = 0.5;
-            a.play().catch(function() {});
+          if (localStorage.getItem("rdx_startup_sound") !== "false") {
+            if (window.RDXAndroid && window.RDXAndroid.playSound) {
+              window.RDXAndroid.playSound("startup");
+            } else {
+              var a = new Audio("./startup.mp3");
+              a.volume = 0.5;
+              a.play().catch(function() {});
+            }
           }
         } catch (e) {}
       })();

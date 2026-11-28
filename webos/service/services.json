@@ -1,0 +1,9 @@
+{
+  "id": "com.rdx.tv.service",
+  "description": "RDX-TV local DoH & HTTP service for LG webOS",
+  "services": [
+    {
+      "name": "com.rdx.tv.service"
+    }
+  ]
+}

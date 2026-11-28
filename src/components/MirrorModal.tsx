@@ -34,6 +34,8 @@ import {
   setAccentColor,
   getBgTheme,
   setBgTheme,
+  getOledCare,
+  setOledCare,
   ACCENT_OPTIONS,
   type AccentColor,
   type BgTheme,
@@ -47,7 +49,7 @@ interface MirrorModalProps {
   onCheckUpdates?: () => Promise<boolean> | boolean | void;
 }
 
-const APP_VERSION = "1.1.9";
+const APP_VERSION = "2.0.0-alpha.1";
 
 const PRESET_MIRRORS = [
   "https://rezka-tv.org",
@@ -162,6 +164,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
   const [uiSounds, setUiSounds] = useState<boolean>(() => getUiSoundsEnabled());
   const [accentColor, setAccentColorState] = useState<AccentColor>(() => getAccentColor());
   const [bgTheme, setBgThemeState] = useState<BgTheme>(() => getBgTheme());
+  const [oledCare, setOledCareState] = useState<boolean>(() => getOledCare());
 
   useTvBack(isOpen, onClose);
 
@@ -359,7 +362,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
           {/* Brand Header */}
           <div className="flex items-center gap-3.5 px-2">
             <img
-              src="/icon-tv.png"
+              src="./icon-tv.png"
               alt="RDX-TV"
               className="w-11 h-11 rounded-2xl object-contain shrink-0"
             />
@@ -595,7 +598,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
               <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-bold text-white">
                   <Shield className="w-4 h-4 text-zinc-400" />
-                  <span>RDX Relay / HTTP / SOCKS5 Проксі (Опціонально)</span>
+                  <span>HTTP / SOCKS5 Проксі (Опціонально)</span>
                 </div>
                 <div className="flex gap-3">
                   <input
@@ -824,6 +827,18 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
               </div>
 
               <TvSwitch
+                checked={oledCare}
+                onToggle={() => {
+                  const next = !oledCare;
+                  setOledCareState(next);
+                  setOledCare(next);
+                }}
+                label="OLED Care (захист екрана)"
+                description="М'який білий текст (82%) проти ореолу та вигоряння на OLED ТВ"
+                icon={<Moon className="w-5 h-5" />}
+              />
+
+              <TvSwitch
                 checked={startupSound}
                 onToggle={() => {
                   const next = !startupSound;
@@ -869,7 +884,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
               <div className="p-6 rounded-2xl bg-white/[0.04] border border-white/10 space-y-5">
                 <div className="flex items-center gap-4">
                   <img
-                    src="/icon-tv.png"
+                    src="./icon-tv.png"
                     alt="RDX-TV"
                     className="w-16 h-16 rounded-2xl object-contain shrink-0"
                   />

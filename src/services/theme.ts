@@ -184,10 +184,31 @@ export const setBgTheme = (theme: BgTheme) => {
   } catch {}
 };
 
+export const getOledCare = (): boolean => {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem("rdx_oled_care") === "true";
+  } catch {
+    return false;
+  }
+};
+
+export const setOledCare = (enabled: boolean): void => {
+  try {
+    localStorage.setItem("rdx_oled_care", String(enabled));
+    if (enabled) {
+      document.documentElement.setAttribute("data-oled-care", "on");
+    } else {
+      document.documentElement.removeAttribute("data-oled-care");
+    }
+  } catch {}
+};
+
 export const initThemes = () => {
   if (typeof window === "undefined") return;
   const accent = getAccentColor();
   const bg = getBgTheme();
   setAccentColor(accent);
   setBgTheme(bg);
+  setOledCare(getOledCare());
 };

@@ -1,11 +1,15 @@
-name: Build RDX-TV (Android TV & Tizen)
+name: Build RDX-TV v2 (Android TV, Samsung Tizen & LG webOS)
 
 on:
   push:
     branches:
       - main
+      - v2
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -13,7 +17,7 @@ permissions:
 
 jobs:
   build-android-tv:
-    name: Android TV APK
+    name: Android TV APKs (32-bit & 64-bit)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -31,85 +35,48 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Rust & Android targets
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi
+          gradle-version: '8.11.1'
 
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-
-      - name: Configure Android SDK & NDK env
+      - name: Install frontend dependencies & sync Android assets
         run: |
-          NDK_DIR=$(ls -d "$ANDROID_HOME/ndk/"* | sort -V | tail -n 1)
-          echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
-          echo "Using NDK at $NDK_DIR"
+          npm ci
+          npm run build:android-assets
 
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Initialize Tauri Android & patch Leanback TV manifest
+      - name: Build & Sign Android TV APKs (armeabi-v7a + arm64-v8a)
         run: |
-          npx tauri android init
-          npx tauri icon src-tauri/icons/icon.png
-          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-          python3 - << 'EOF'
-          from pathlib import Path
-          p = Path("src-tauri/gen/android/app/src/main/AndroidManifest.xml")
-          txt = p.read_text()
-          if "android.software.leanback" not in txt:
-              txt = txt.replace(
-                  "<application",
-                  '    <uses-feature android:name="android.software.leanback" android:required="false" />\n'
-                  '    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />\n\n    <application',
-                  1,
-              )
-          if "android:banner=" not in txt:
-              txt = txt.replace(
-                  "<application",
-                  '<application android:banner="@mipmap/ic_launcher"',
-                  1,
-              )
-          if "CATEGORY_LEANBACK_LAUNCHER" not in txt:
-              txt = txt.replace(
-                  '<category android:name="android.intent.category.LAUNCHER" />',
-                  '<category android:name="android.intent.category.LAUNCHER" />\n                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />',
-                  1,
-              )
-          p.write_text(txt)
-          print("Patched AndroidManifest.xml for Android TV Leanback")
-          EOF
+          cd android-tv
+          gradle assembleRelease --no-daemon
+          cd ..
 
-      - name: Build & Sign Android TV APKs (arm64 + armv7 release)
-        run: |
           mkdir -p artifacts
           keytool -genkeypair -v -keystore /tmp/rdx-tv.keystore -alias rdxtv \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass rdxtv123 -keypass rdxtv123 \
             -dname "CN=RDX-TV,O=RDX,C=UA"
+
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
 
-          for ARCH in aarch64 armv7; do
-            rm -rf src-tauri/gen/android/app/build/outputs/apk
-            npx tauri android build --apk --target "$ARCH"
-            APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -n 1)
+          for ABI in armeabi-v7a arm64-v8a; do
+            APK=$(find android-tv/app/build/outputs/apk/release -name "*${ABI}*.apk" | head -n 1)
             if [ -z "$APK" ]; then
-              echo "Release APK not found for $ARCH!"
-              find src-tauri/gen/android/app/build/outputs/apk -type f || true
+              echo "Release APK not found for $ABI!"
+              find android-tv/app/build/outputs/apk -type f || true
               exit 1
             fi
-            OUT_NAME="RDX-TV-android-tv-${ARCH/aarch64/arm64}.apk"
-            "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "/tmp/rdx-${ARCH}-aligned.apk"
+            OUT_ARCH="${ABI/armeabi-v7a/armv7}"
+            OUT_ARCH="${OUT_ARCH/arm64-v8a/arm64}"
+            OUT_NAME="RDX-TV-android-tv-${OUT_ARCH}.apk"
+            "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "/tmp/rdx-${ABI}-aligned.apk"
             "$BUILD_TOOLS/apksigner" sign \
               --ks /tmp/rdx-tv.keystore \
               --ks-pass pass:rdxtv123 \
               --key-pass pass:rdxtv123 \
               --ks-key-alias rdxtv \
               --out "artifacts/${OUT_NAME}" \
-              "/tmp/rdx-${ARCH}-aligned.apk"
+              "/tmp/rdx-${ABI}-aligned.apk"
           done
           ls -lh artifacts/
 
@@ -119,8 +86,8 @@ jobs:
           name: RDX-TV-android-tv-apk
           path: artifacts/*.apk
 
-  build-tizen-bundle:
-    name: Samsung Tizen Web Bundle
+  build-tizen:
+    name: Samsung Tizen (.wgt)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -132,17 +99,12 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build Tizen dist
-        env:
-          VITE_TIZEN_RELAY_URL: ${{ secrets.VITE_TIZEN_RELAY_URL }}
-        run: npm run build:tizen
-
-      - name: Package Tizen staging archive
+      - name: Build Tizen bundle
         run: |
+          npm ci
+          npm run build:tizen
           mkdir -p artifacts
+          (cd dist-tizen && zip -r ../artifacts/RDX-TV-tizen.wgt .)
           (cd dist-tizen && zip -r ../artifacts/RDX-TV-tizen-dist.zip .)
           ls -lh artifacts/
 
@@ -150,15 +112,43 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RDX-TV-tizen-bundle
-          path: artifacts/RDX-TV-tizen-dist.zip
+          path: artifacts/*
+
+  build-webos:
+    name: LG webOS (.ipk)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Build & Package LG webOS IPK (with local DoH service)
+        run: |
+          npm ci
+          npm run build:webos
+          mkdir -p artifacts
+          npm install -g @webos-tools/cli
+          ares-package --no-minify dist-webos webos/service -o artifacts/
+          ls -lh artifacts/
+
+      - name: Upload LG webOS IPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RDX-TV-webos-ipk
+          path: artifacts/*.ipk
 
   publish-release:
     name: Publish GitHub Release
-    needs: [build-android-tv, build-tizen-bundle]
+    needs: [build-android-tv, build-tizen, build-webos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Download Android TV APK
+      - name: Download Android TV APKs
         uses: actions/download-artifact@v4
         with:
           name: RDX-TV-android-tv-apk
@@ -168,6 +158,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: RDX-TV-tizen-bundle
+          path: release-assets
+
+      - name: Download LG webOS IPK
+        uses: actions/download-artifact@v4
+        with:
+          name: RDX-TV-webos-ipk
           path: release-assets
 
       - name: Create GitHub Release

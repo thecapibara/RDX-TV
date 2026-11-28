@@ -180,9 +180,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [osdVisible, setOsdVisible] = useState<boolean>(true);
   const [drawer, setDrawer] = useState<DrawerKind>(null);
-  const [hudNotice, setHudNotice] = useState<string | null>(
-    initialPositionSec > 5 ? `Відновлено з ${formatTime(initialPositionSec)}` : null
-  );
+  const [hudNotice, setHudNotice] = useState<string | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
   const [sleepMinutes, setSleepMinutes] = useState<number>(0);
   const [nextCountdown, setNextCountdown] = useState<number | null>(null);
   const [engineKind, setEngineKind] = useState<PlayerAdapter["kind"]>("html5-hls");
@@ -247,9 +246,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const showNotice = useCallback((text: string) => {
     setHudNotice(text);
-    window.setTimeout(() => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => {
       setHudNotice((prev) => (prev === text ? null : prev));
-    }, 2400);
+    }, 2600);
+  }, []);
+
+  useEffect(() => {
+    if (initialPositionSec > 5) {
+      showNotice(`Відновлено з ${formatTime(initialPositionSec)}`);
+    }
+    return () => {
+      if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const revealOsd = useCallback(() => {

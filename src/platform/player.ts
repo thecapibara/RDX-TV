@@ -77,6 +77,9 @@ class TizenAvPlayAdapter implements PlayerAdapter {
   readonly kind = "tizen-avplay" as const;
   readonly isExternalSurface = true;
   private durationSec = 0;
+  private loadSeq = 0;
+  private destroyed = false;
+  private visibilityHandler: (() => void) | null = null;
 
   async load(opts: PlayerLoadOptions, callbacks: PlayerCallbacks): Promise<void> {
     const avplay = window.webapis?.avplay;
@@ -85,55 +88,100 @@ class TizenAvPlayAdapter implements PlayerAdapter {
       return;
     }
 
-    try {
+    const seq = ++this.loadSeq;
+    this.destroyed = false;
+
+    // Register visibilitychange suspend/restore so Tizen hardware decoder never hangs after TV sleep
+    if (!this.visibilityHandler && typeof document !== "undefined") {
+      this.visibilityHandler = () => {
+        const av = window.webapis?.avplay;
+        if (!av || this.destroyed) return;
+        try {
+          if (document.hidden) av.suspend?.();
+          else av.restore?.();
+        } catch {}
+      };
+      document.addEventListener("visibilitychange", this.visibilityHandler);
+    }
+
+    const openUrl = async (targetUrl: string): Promise<void> => {
       try {
         avplay.stop();
         avplay.close();
       } catch {}
 
       callbacks.onStateChange?.("loading");
-      avplay.open(opts.url);
+      avplay.open(targetUrl);
       avplay.setDisplayRect(0, 0, window.innerWidth || 1920, window.innerHeight || 1080);
       try {
         avplay.setDisplayMethod("PLAYER_DISPLAY_MODE_LETTER_BOX");
       } catch {}
 
       avplay.setListener({
-        onbufferingstart: () => callbacks.onStateChange?.("buffering"),
-        onbufferingcomplete: () => callbacks.onStateChange?.("playing"),
+        onbufferingstart: () => {
+          if (!this.destroyed && seq === this.loadSeq) callbacks.onStateChange?.("buffering");
+        },
+        onbufferingcomplete: () => {
+          if (!this.destroyed && seq === this.loadSeq) callbacks.onStateChange?.("playing");
+        },
         oncurrentplaytime: (ms: unknown) => {
+          if (this.destroyed || seq !== this.loadSeq) return;
           const cur = Number(ms || 0) / 1000;
           callbacks.onTimeUpdate?.(cur, this.durationSec, cur);
         },
         onstreamcompleted: () => {
-          callbacks.onStateChange?.("ended");
+          if (!this.destroyed && seq === this.loadSeq) callbacks.onStateChange?.("ended");
         },
         onerror: (err: unknown) => {
-          callbacks.onError?.(`AVPlay error: ${String(err)}`);
+          if (!this.destroyed && seq === this.loadSeq) {
+            callbacks.onError?.(`AVPlay error: ${String(err)}`);
+          }
         },
       });
 
       await new Promise<void>((resolve, reject) => {
         avplay.prepareAsync(
           () => {
+            if (this.destroyed || seq !== this.loadSeq) {
+              try {
+                avplay.stop();
+                avplay.close();
+              } catch {}
+              resolve();
+              return;
+            }
             this.durationSec = Math.max(0, avplay.getDuration() / 1000);
             callbacks.onReady?.(this.durationSec);
+            avplay.play();
+            // Seek AFTER play() to avoid INVALID_STATE_ERROR on Tizen 5.5/6.0
             if (opts.startSec && opts.startSec > 3) {
               try {
                 avplay.seekTo(Math.floor(opts.startSec * 1000));
               } catch {}
             }
-            avplay.play();
             callbacks.onStateChange?.("playing");
             resolve();
           },
-          (err) => {
-            reject(err);
-          }
+          (err) => reject(err)
         );
       });
-    } catch (err) {
-      callbacks.onError?.(`Помилка Samsung AVPlay: ${String(err)}`);
+    };
+
+    try {
+      await openUrl(opts.url);
+    } catch (primaryErr) {
+      if (!this.destroyed && seq === this.loadSeq && opts.fallbackUrl && opts.fallbackUrl !== opts.url) {
+        try {
+          await openUrl(opts.fallbackUrl);
+          return;
+        } catch (fbErr) {
+          callbacks.onError?.(`Помилка Samsung AVPlay: ${String(fbErr)}`);
+          return;
+        }
+      }
+      if (!this.destroyed && seq === this.loadSeq) {
+        callbacks.onError?.(`Помилка Samsung AVPlay: ${String(primaryErr)}`);
+      }
     }
   }
 
@@ -172,7 +220,18 @@ class TizenAvPlayAdapter implements PlayerAdapter {
       av.setDisplayMethod(m);
     } catch {}
   }
+  setSubtitle(url: string | null) {
+    try {
+      if (url) window.webapis?.avplay?.setExternalSubtitlePath?.(url);
+    } catch {}
+  }
   destroy() {
+    this.destroyed = true;
+    this.loadSeq++;
+    if (this.visibilityHandler && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
     try {
       window.webapis?.avplay?.stop();
       window.webapis?.avplay?.close();
@@ -190,6 +249,8 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
   private video: HTMLVideoElement | null = null;
   private hls: HlsType | null = null;
   private cleanupListeners: (() => void) | null = null;
+  private loadSeq = 0;
+  private destroyed = false;
 
   constructor(private readonly platformKind: PlatformKind) {
     this.kind = platformKind === "webos" ? "webos-native" : "html5-hls";
@@ -200,6 +261,8 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
   }
 
   async load(opts: PlayerLoadOptions, callbacks: PlayerCallbacks): Promise<void> {
+    const seq = ++this.loadSeq;
+    this.destroyed = false;
     this.teardownPlayback();
     const video = this.video;
     if (!video) {
@@ -268,6 +331,8 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
 
     // Lazy-load hls.js only when MSE fallback is actually needed (saves ~520KB on ExoPlayer/AVPlay/webOS)
     const { default: Hls } = await import("hls.js");
+    // Guard against destroy() or newer load() finishing while hls.js chunk was loading
+    if (this.destroyed || seq !== this.loadSeq || this.video !== video) return;
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -391,6 +456,8 @@ class Html5HlsPlayerAdapter implements PlayerAdapter {
   }
 
   destroy() {
+    this.destroyed = true;
+    this.loadSeq++;
     this.teardownPlayback();
   }
 }

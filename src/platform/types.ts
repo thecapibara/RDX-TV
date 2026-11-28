@@ -103,6 +103,9 @@ export interface TizenAvPlay {
   getDuration(): number;
   getCurrentTime(): number;
   getState(): string;
+  suspend?(): void;
+  restore?(url?: string, resumeTime?: number, prepare?: boolean): void;
+  setExternalSubtitlePath?(path: string): void;
 }
 
 /** LG webOS Luna service (`window.webOS`) */

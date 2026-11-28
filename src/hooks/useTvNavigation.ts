@@ -189,8 +189,12 @@ export function useTvNavigation(disabled: boolean = false) {
         if (next) {
           next.focus({ preventScroll: true });
           const scrollBehavior: ScrollBehavior = e.repeat ? "auto" : "smooth";
-          // When focus returns to Hero actions or fixed TopBar, unfold page back to top (scrollY = 0)
+          // When focus returns to Hero actions or fixed TopBar, scroll the actual <main> container (and window) to top
           if (next.closest('[data-tv-row="hero-actions"]') || next.closest("header")) {
+            const mainEl = document.querySelector("main");
+            if (mainEl) {
+              mainEl.scrollTo({ top: 0, behavior: scrollBehavior });
+            }
             window.scrollTo({ top: 0, behavior: scrollBehavior });
           } else {
             next.scrollIntoView({

@@ -2,7 +2,7 @@
 <html lang="uk" class="dark" style="background-color: var(--bg-base, #000000); color: #f4f4f5; scrollbar-gutter: stable;">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="icon" type="image/png" href="./logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RDX-TV</title>
     <script>
@@ -428,7 +428,7 @@
           </g>
         </svg>
         <div class="rdx-boot-logo-wrap">
-          <img src="/logo.png" alt="RDX-TV" class="rdx-boot-logo" />
+          <img src="./logo.png" alt="RDX-TV" class="rdx-boot-logo" />
           <div class="rdx-logo-sheen"></div>
         </div>
       </div>
@@ -491,7 +491,7 @@
             if (window.RDXAndroid && window.RDXAndroid.playSound) {
               window.RDXAndroid.playSound("startup");
             } else {
-              var a = new Audio("/startup.mp3");
+              var a = new Audio("./startup.mp3");
               a.volume = 0.5;
               a.play().catch(function() {});
             }

@@ -197,6 +197,7 @@ function rdxDevProxyPlugin(): Plugin {
 }
 
 export default defineConfig({
+  base: "./",
   plugins: [react(), rdxDevProxyPlugin()],
   resolve: {
     alias: {

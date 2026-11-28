@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:tizen": "npm run build && rm -rf dist-tizen && cp -r dist dist-tizen && cp tizen/config.xml dist-tizen/config.xml",
-    "build:webos": "npm run build && rm -rf dist-webos && cp -r dist dist-webos && cp webos/appinfo.json dist-webos/appinfo.json",
+    "build:webos": "npm run build && rm -rf dist-webos && cp -r dist dist-webos && cp webos/appinfo.json webos/icon80.png webos/icon130.png dist-webos/",
     "build:android-assets": "npm run build && rm -rf android-tv/app/src/main/assets/www && mkdir -p android-tv/app/src/main/assets/www && cp -r dist/* android-tv/app/src/main/assets/www/",
     "preview": "vite preview"
   },

@@ -362,7 +362,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
           {/* Brand Header */}
           <div className="flex items-center gap-3.5 px-2">
             <img
-              src="/icon-tv.png"
+              src="./icon-tv.png"
               alt="RDX-TV"
               className="w-11 h-11 rounded-2xl object-contain shrink-0"
             />
@@ -884,7 +884,7 @@ export const MirrorModal: React.FC<MirrorModalProps> = ({
               <div className="p-6 rounded-2xl bg-white/[0.04] border border-white/10 space-y-5">
                 <div className="flex items-center gap-4">
                   <img
-                    src="/icon-tv.png"
+                    src="./icon-tv.png"
                     alt="RDX-TV"
                     className="w-16 h-16 rounded-2xl object-contain shrink-0"
                   />

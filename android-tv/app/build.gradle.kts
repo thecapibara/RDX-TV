@@ -13,10 +13,14 @@ android {
         targetSdk = 35
         versionCode = 200
         versionName = "2.0.0-alpha.1"
+    }
 
-        ndk {
-            // Explicit 32-bit (1-2GB TV boxes) + 64-bit ARM support
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = false
         }
     }
 

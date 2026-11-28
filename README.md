@@ -1,13 +1,13 @@
-# RDX-TV. — Smart TV Streaming Client (Android TV & Samsung Tizen)
+# RDX-TV. v2 — Lightweight Smart TV Streaming Client
 
 <p align="center">
   <img src="assets/banner.jpg" width="100%" alt="RDX-TV Hero Banner" />
 </p>
 
 <p align="center">
-  <b>10-foot Smart TV streaming client for HDRezka (and its mirrors) built for Android TV (Tauri v2) and Samsung TV (Tizen `.wgt`) with an Apple TV / Google TV inspired interface.</b><br/>
-  Built with <b>Rust (Tauri v2)</b>, <b>React 19</b>, <b>TypeScript</b>, <b>Tailwind CSS</b>, and <b>HLS.js</b>.<br/>
-  <sub>Based on the <a href="https://github.com/thecapibara/RDX">RDX</a> desktop client.</sub>
+  <b>Ultra-lightweight 10-foot Smart TV streaming client for HDRezka (and its mirrors) built specifically for 1–2 GB RAM TVs: Android TV (32-bit & 64-bit), Samsung Tizen (<code>.wgt</code>), and LG webOS (<code>.ipk</code>).</b><br/>
+  Built with <b>Preact</b>, <b>TypeScript</b>, <b>Tailwind CSS</b>, and <b>native hardware video engines</b> (<b>Media3 / ExoPlayer</b>, <b>Samsung AVPlay</b>, <b>LG webOS HLS</b>) — zero Rust/Tauri overhead, zero Cloudflare relays.<br/>
+  <sub>Based on the <a href="https://github.com/thecapibara/RDX">RDX</a> desktop client. Legacy Rust/Tauri v1 is archived in the <code>legacy-rdxtv</code> branch.</sub>
 </p>
 
 ---
@@ -18,22 +18,32 @@
 
 ---
 
+## ⚡ Why v2? (1–2 GB RAM TV Architecture)
+
+| Platform | Native Shell | Hardware Video Engine | Networking & DoH |
+| :--- | :--- | :--- | :--- |
+| **Android TV (32-bit `armeabi-v7a` & 64-bit `arm64-v8a`)** | Lightweight Kotlin (`android-tv/`) | **Media3 / ExoPlayer** (16 MB buffer cap, `LoudnessEnhancer`) | **OkHttp** + **DoH (`1.1.1.1`)** + `CookieJar` |
+| **Samsung Tizen (`.wgt`)** | Packaged Tizen Web App (`tizen/`) | **Samsung `webapis.avplay`** (with `suspend`/`restore`) | Direct mirror fetch (`<access origin="*">`) + mirror auto-failover |
+| **LG webOS (`.ipk`)** | webOS App + local Node.js service (`webos/`) | Native `<video>` HLS pipeline | Local **`webos-service`** + **DoH (`1.1.1.1` / `8.8.8.8`)** + `CookieJar` |
+
+- **5.5× smaller JS bundle** than v1 (`~67 KB` gzip main JS, `hls.js` lazy-loaded only as a web fallback).
+- **100% local on the TV** — no Cloudflare Workers or external relays required.
+
+---
+
 ## ✨ Key Features
 
-- **10-Foot Smart TV / Cinema UI**:
-  - Matte obsidian (`#09090b`) & crimson (`#e11d48`) design language with high-contrast D-pad focus rings and smooth spatial navigation (`Arrow` keys, `OK / Enter`, `Return / Back`).
-  - Full-bleed hero carousel with TMDB 1080p/4K backdrop lookup, **"Continue Watching"** (`Продовжити перегляд`) swimlane with episode progress, and category carousels.
-  - Apple TV / Disney+ style release detail screen with Ukrainian voiceover (`🇺🇦`) prioritization, season/episode picker, and instant playback.
+- **10-Foot Smart TV / Cinema UI (60 FPS GPU-CSS)**:
+  - True OLED (`#000000`) & Obsidian (`#09090b`) themes, 5 accent palettes, and **OLED Care** mode (82% soft white UI text to prevent OLED halation & burn-in).
+  - Crisp `w1280` TMDB Hero carousel, **"Continue Watching"** (`Продовжити перегляд`), 10-foot genre modal grid, and Apple TV / Disney+ style release details.
 - **TV Remote First Navigation & Built-in TV Keyboard**:
-  - Full spatial D-pad navigation (`useTvNavigation` / `useTvBack`) across cards, filters, settings, player OSD, and modals — including Samsung Tizen `Return` (`keyCode 10009`) and Android TV `Back`.
-  - Built-in **UA / EN On-Screen TV Keyboard** inside Search alongside native Samsung Tizen IME (`65376` / `65385`) support.
-- **Hybrid TV Audio Engine**:
-  - Native `rodio` playback on desktop testing (`startup.mp3`, `hovercard.mp3`, `opencard.mp3`, `buttonclick.mp3`) + `AudioContext.decodeAudioData` MP3 preloading on **Android TV** and **Samsung Tizen**, plus Web Audio boot splash `bubbles` SFX.
-- **Custom TV Video Player (`HLS` + `MP4`)**:
-  - D-pad controllable OSD (seek `← / →`, Play/Pause `OK`, media remote keys, voiceovers, seasons/episodes, quality up to `1080p Ultra / 4K`, speed, sleep timer, and stream diagnostics).
-  - Auto-saves playback progress every 5 seconds to SQLite (`app_data_dir()` on Android TV / desktop) or `localStorage` on Tizen.
-- **HDRezka Mirror, DoH & Tizen HTTP Bridge**:
-  - Built-in DNS-over-HTTPS (DoH), Anubis PoW solver, dynamic mirror failover, `HTTP` / `SOCKS5` proxy support, and **RDX Bridge URL** transport (`invokeBridge`) for Samsung Tizen `.wgt`.
+  - Full spatial D-pad navigation (`useTvNavigation` + LIFO `useTvBack`) across cards, filters, settings, player OSD, and modals — including Android TV `Back`, Samsung Tizen `Return` (`10009`), and LG webOS `Back` (`461`).
+  - Built-in **UA / EN On-Screen TV Keyboard** inside Search.
+- **Native TV Audio Feedback**:
+  - Native Android `SoundPool` (`startup.mp3`, `hovercard.mp3`, `opencard.mp3`, `buttonclick.mp3`) and preloaded Web Audio buffers + oscillator fallback on Tizen/webOS.
+- **Unified TV Player OSD**:
+  - Works seamlessly over **ExoPlayer**, **Samsung AVPlay**, **webOS Native HLS**, and **HLS.js** fallback.
+  - Quality selector (`1080p Ultra / 2K / 4K` with `👑` badge), Ukrainian voiceover switcher (`🇺🇦`), seasons & episodes drawer, 15s auto-next countdown, aspect ratio zoom (`Авто / Заповнити / 16:9`), subtitles + sizing, playback speed, sleep timer, Android native audio boost (`100%–200%`), and stream stats HUD (`I`).
 
 ---
 
@@ -52,36 +62,37 @@
 | :--- | :--- |
 | `D-Pad (↑ ↓ ← →)` | Navigate UI / Seek **±10s** in player |
 | `OK / Enter` | Select / Open / Play–Pause |
-| `Return / Back` | Close modal / Exit player / Back |
+| `Return / Back` | Close modal / Exit player / Double-Back to exit app |
 | `Play / Pause / FF / RW` | Native TV media remote playback controls |
 
 ---
 
 ## 🛠 Development & Build
 
-### Prerequisites
-- **Rust** (`1.77+`) & **Node.js** (`20+`)
-- For Desktop testing on Linux: `webkit2gtk-4.1` and `gstreamer1` plugins
-- For **Android TV**: Android SDK / NDK + `rustup target add aarch64-linux-android`
-- For **Samsung Tizen**: Tizen Studio CLI (`tizen`, `sdb`)
-
-### Desktop Development Preview
+### Local Browser Development (with built-in dev-only DoH proxy)
 ```bash
 npm install
-npm run tauri dev
+npm run dev
+# Opens at http://localhost:1420
 ```
 
-### Build for Samsung Tizen (`.wgt` staging)
+### Android TV (32-bit `armeabi-v7a` & 64-bit `arm64-v8a` APKs)
+```bash
+npm run build:android-assets
+cd android-tv && gradle assembleRelease
+```
+
+### Samsung Tizen (`.wgt`)
 ```bash
 npm run build:tizen
 # Package with Tizen Studio CLI:
 # tizen package -t wgt -s <certificate_profile> -- dist-tizen
 ```
 
-### Build for Android TV (`.apk`)
+### LG webOS (`.ipk` with local DoH service)
 ```bash
-npx tauri android init
-npx tauri android build
+npm run build:webos
+ares-package --no-minify dist-webos webos/service -o artifacts/
 ```
 
 ---
